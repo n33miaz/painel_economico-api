@@ -13,37 +13,37 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 @Service
 public class NewsService {
 
-    private final WebClient webClient;
+        private final WebClient webClient;
 
-    @Value("${news.api.url}")
-    private String newsApiUrl;
+        @Value("${news.api.url}")
+        private String newsApiUrl;
 
-    @Value("${news.api.key}")
-    private String newsApiKey;
+        @Value("${news.api.key}")
+        private String newsApiKey;
 
-    public NewsService(WebClient webClient) {
-        this.webClient = webClient;
-    }
+        public NewsService(WebClient webClient) {
+                this.webClient = webClient;
+        }
 
-    @Cacheable("news")
-    public NewsResponseDTO getTopHeadlines(String country, String category) {
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path(newsApiUrl + "/top-headlines")
-                        .queryParam("country", country)
-                        .queryParam("category", category)
-                        .queryParam("apiKey", newsApiKey)
-                        .build())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
-                        .flatMap(errorBody -> Mono.error(
-                                new WebClientResponseException(
-                                        response.statusCode().value(),
-                                        "Erro na API de Notícias: " + errorBody,
-                                        response.headers().asHttpHeaders(),
-                                        errorBody.getBytes(),
-                                        null))))
-                .bodyToMono(NewsResponseDTO.class)
-                .block();
-    }
+        @Cacheable("news")
+        public NewsResponseDTO getTopHeadlines(String country, String category) {
+                return webClient.get()
+                                .uri(uriBuilder -> uriBuilder
+                                                .path(newsApiUrl + "/top-headlines")
+                                                .queryParam("country", country)
+                                                .queryParam("category", category)
+                                                .queryParam("apiKey", newsApiKey)
+                                                .build())
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
+                                                .flatMap(errorBody -> Mono.error(
+                                                                new WebClientResponseException(
+                                                                                response.statusCode().value(),
+                                                                                "Erro na API de Notícias: " + errorBody,
+                                                                                response.headers().asHttpHeaders(),
+                                                                                errorBody.getBytes(),
+                                                                                null))))
+                                .bodyToMono(NewsResponseDTO.class)
+                                .block();
+        }
 }

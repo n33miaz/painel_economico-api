@@ -15,12 +15,12 @@ public class CacheConfig {
     @Bean
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager("indicators", "news", "historical");
-        
+
         cacheManager.setCaffeine(Objects.requireNonNull(Caffeine.newBuilder()
-                .expireAfterWrite(10, TimeUnit.MINUTES) 
-                .maximumSize(100) 
+                .expireAfterWrite(10, TimeUnit.MINUTES)
+                .maximumSize(100)
                 .recordStats()));
-        
+
         return cacheManager;
     }
 }
