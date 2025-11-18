@@ -20,12 +20,12 @@ public class NewsService {
         this.webClient = webClient;
     }
 
-    public NewsResponseDTO getTopHeadlines() {
+    public NewsResponseDTO getTopHeadlines(String country, String category) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path(newsApiUrl + "/top-headlines")
-                        .queryParam("country", "br")
-                        .queryParam("category", "business")
+                        .queryParam("country", country)
+                        .queryParam("category", category)
                         .queryParam("apiKey", newsApiKey)
                         .build())
                 .retrieve()
