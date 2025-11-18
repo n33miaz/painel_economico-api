@@ -1,5 +1,6 @@
 package br.com.painel_economico.service;
 
+import br.com.painel_economico.dto.HistoricalDataPointDTO;
 import br.com.painel_economico.dto.IndicatorDTO;
 
 import org.springframework.cache.annotation.Cacheable;
@@ -45,5 +46,27 @@ public class IndicatorService {
         }
 
         return new ArrayList<>(responseMap.values());
+    }
+
+    @Cacheable("historical")
+    public List<HistoricalDataPointDTO> getHistoricalData(String currencyCode, int days) {
+        String historicalApiUrl = String.format("https://economia.awesomeapi.com.br/json/daily/%s-BRL/%d", currencyCode,
+                days);
+
+        return webClient.get()
+                .uri(historicalApiUrl)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
+                        .flatMap(errorBody -> Mono.error(
+                                new WebClientResponseException(
+                                        response.statusCode().value(),
+                                        "Erro na API de Indicadores: " + errorBody,
+                                        response.headers().asHttpHeaders(),
+                                        errorBody.getBytes(),
+                                        null))))
+
+                .bodyToMono(new ParameterizedTypeReference<List<HistoricalDataPointDTO>>() {
+                })
+                .block();
     }
 }
