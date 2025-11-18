@@ -1,6 +1,8 @@
 package br.com.painel_economico.service;
 
 import br.com.painel_economico.dto.IndicatorDTO;
+
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -21,6 +23,7 @@ public class IndicatorService {
         this.webClient = webClient;
     }
 
+    @Cacheable("indicators")
     public List<IndicatorDTO> getAllIndicators() {
         Map<String, IndicatorDTO> responseMap = webClient.get()
                 .uri(awesomeApiUrl)

@@ -4,6 +4,7 @@ import br.com.painel_economico.dto.NewsResponseDTO;
 import reactor.core.publisher.Mono;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -24,6 +25,7 @@ public class NewsService {
         this.webClient = webClient;
     }
 
+    @Cacheable("news")
     public NewsResponseDTO getTopHeadlines(String country, String category) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
