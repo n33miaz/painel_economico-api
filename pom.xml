@@ -8,8 +8,8 @@
 		<version>3.5.7</version>
 		<relativePath/>
 	</parent>
-	<groupId>br.com.neemias</groupId>
-	<artifactId>painel-economico-api</artifactId>
+	<groupId>br.com</groupId>
+	<artifactId>painel_economico</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>painel-economico-api</name>
 	<description>Demo project for Spring Boot</description>
