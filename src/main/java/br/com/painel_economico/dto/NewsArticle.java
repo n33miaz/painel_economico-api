@@ -3,8 +3,8 @@ package br.com.painel_economico.dto;
 import lombok.Data;
 
 @Data
-public class NewsArticleDTO {
-    private SourceDTO source;
+public class NewsArticle {
+    private Source source;
     private String author;
     private String title;
     private String description;

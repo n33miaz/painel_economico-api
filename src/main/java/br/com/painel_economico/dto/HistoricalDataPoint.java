@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import lombok.Data;
 
 @Data
-public class HistoricalDataPointDTO {
+public class HistoricalDataPoint {
     private String timestamp;
     private BigDecimal high;
 }

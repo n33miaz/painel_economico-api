@@ -5,7 +5,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 @Data
-public class IndicatorDTO {
+public class Indicator {
     private String code;
     private String name;
     private BigDecimal buy;

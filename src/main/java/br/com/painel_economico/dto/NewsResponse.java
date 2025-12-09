@@ -4,8 +4,8 @@ import java.util.List;
 import lombok.Data;
 
 @Data
-public class NewsResponseDTO {
+public class NewsResponse {
     private String status;
     private int totalResults;
-    private List<NewsArticleDTO> articles;
+    private List<NewsArticle> articles;
 }
