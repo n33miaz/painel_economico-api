@@ -1,7 +1,9 @@
 package br.com.painel_economico.controller;
 
-import br.com.painel_economico.dto.NewsResponseDTO;
+import br.com.painel_economico.dto.NewsResponse;
 import br.com.painel_economico.service.NewsService;
+import reactor.core.publisher.Mono;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,10 +21,10 @@ public class NewsController {
     }
 
     @GetMapping("/top-headlines")
-    public ResponseEntity<NewsResponseDTO> getTopHeadlines(
+    public Mono<ResponseEntity<NewsResponse>> getTopHeadlines(
             @RequestParam(defaultValue = "br") String country,
             @RequestParam(defaultValue = "business") String category) {
-        NewsResponseDTO response = newsService.getTopHeadlines(country, category);
-        return ResponseEntity.ok(response);
+        return newsService.getTopHeadlines(country, category)
+                .map(response -> ResponseEntity.ok(response));
     }
 }

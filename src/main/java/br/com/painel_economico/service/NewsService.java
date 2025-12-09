@@ -1,6 +1,6 @@
 package br.com.painel_economico.service;
 
-import br.com.painel_economico.dto.NewsResponseDTO;
+import br.com.painel_economico.dto.NewsResponse;
 import reactor.core.publisher.Mono;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +26,7 @@ public class NewsService {
         }
 
         @Cacheable("news")
-        public NewsResponseDTO getTopHeadlines(String country, String category) {
+        public Mono<NewsResponse> getTopHeadlines(String country, String category) {
                 return webClient.get()
                                 .uri(uriBuilder -> uriBuilder
                                                 .path(newsApiUrl + "/top-headlines")
@@ -43,7 +43,6 @@ public class NewsService {
                                                                                 response.headers().asHttpHeaders(),
                                                                                 errorBody.getBytes(),
                                                                                 null))))
-                                .bodyToMono(NewsResponseDTO.class)
-                                .block();
+                                .bodyToMono(NewsResponse.class);
         }
 }
