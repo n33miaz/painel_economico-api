@@ -11,10 +11,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.http.HttpStatusCode;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class IndicatorService {
@@ -41,8 +41,23 @@ public class IndicatorService {
                                                                                 null))))
                                 .bodyToMono(new ParameterizedTypeReference<Map<String, Indicator>>() {
                                 })
-                                .map(responseMap -> (List<Indicator>) new ArrayList<>(responseMap.values()))
+                                .map(responseMap -> {
+                                        return responseMap.values().stream()
+                                                        .map(this::enrichIndicatorData)
+                                                        .collect(Collectors.toList());
+                                })
                                 .defaultIfEmpty(Collections.emptyList());
+        }
+
+        private Indicator enrichIndicatorData(Indicator indicator) {
+                if (indicator.getCode() != null) {
+                        indicator.setId("currency_" + indicator.getCode());
+                        indicator.setType("currency");
+                } else {
+                        indicator.setId("index_" + indicator.getName().replaceAll("\\s+", ""));
+                        indicator.setType("index");
+                }
+                return indicator;
         }
 
         @Cacheable("historical")
@@ -52,17 +67,11 @@ public class IndicatorService {
                 return webClient.get()
                                 .uri(awesomeApiUrl + historicalApiUrl)
                                 .retrieve()
-                                .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
-                                                .flatMap(errorBody -> Mono.error(
-                                                                new WebClientResponseException(
-                                                                                response.statusCode().value(),
-                                                                                "Erro na API de Dados Históricos: "
-                                                                                                + errorBody,
-                                                                                response.headers().asHttpHeaders(),
-                                                                                errorBody.getBytes(),
-                                                                                null))))
                                 .bodyToMono(new ParameterizedTypeReference<List<HistoricalDataPoint>>() {
                                 })
-                                .defaultIfEmpty(Collections.emptyList());
+                                .onErrorResume(e -> {
+                                        System.err.println("Erro ao buscar histórico: " + e.getMessage());
+                                        return Mono.just(Collections.emptyList());
+                                });
         }
 }
