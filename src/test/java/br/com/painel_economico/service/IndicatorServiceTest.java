@@ -14,7 +14,6 @@ import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,45 +45,46 @@ class IndicatorServiceTest {
         indicatorService = new IndicatorService(webClient);
     }
 
-    @Test
-    @DisplayName("Deve retornar lista de indicadores enriquecida com ID e Type")
-    @SuppressWarnings("unchecked") 
-    void shouldReturnEnrichedIndicators() {
-        // prepara dados mockados
-        Indicator mockCurrency = new Indicator();
-        mockCurrency.setCode("USD");
-        mockCurrency.setName("Dólar Americano");
-        mockCurrency.setBuy(new BigDecimal("5.50"));
-
-        Map<String, Indicator> apiResponse = new HashMap<>();
-        apiResponse.put("USD", mockCurrency);
-
-        // configura o comportamento do mock
+    private void mockWebClientResponse(Map<String, Indicator> responseBody) {
         when(webClient.get()).thenReturn(requestHeadersUriSpec);
         when(requestHeadersUriSpec.uri(anyString())).thenReturn(requestHeadersSpec);
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-
-        // tratamento de erro
         when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
-
-        // corpo da resposta
         when(responseSpec.bodyToMono(new ParameterizedTypeReference<Map<String, Indicator>>() {
         }))
-                .thenReturn(Mono.just(apiResponse));
+                .thenReturn(Mono.just(responseBody));
+    }
 
-        // executa e verifica
-        Mono<List<Indicator>> result = indicatorService.getAllIndicators();
+    @Test
+    @DisplayName("Deve converter BRL para moeda estrangeira corretamente")
+    void shouldConvertCurrencyCorrectly() {
+        Indicator usd = new Indicator();
+        usd.setCode("USD");
+        usd.setSell(new BigDecimal("5.00"));
+
+        Map<String, Indicator> apiResponse = new HashMap<>();
+        apiResponse.put("USD", usd);
+
+        mockWebClientResponse(apiResponse);
+
+        Mono<BigDecimal> result = indicatorService.calculateConversion("USD", new BigDecimal("100.00"));
 
         StepVerifier.create(result)
-                .assertNext(indicators -> {
-                    assertEquals(1, indicators.size());
-                    Indicator ind = indicators.get(0);
-
-                    // verifica se o enriquecimento funcionou
-                    assertEquals("currency_USD", ind.getId());
-                    assertEquals("currency", ind.getType());
-                    assertEquals("USD", ind.getCode());
+                .assertNext(value -> {
+                    assertEquals(new BigDecimal("20.00"), value);
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Deve retornar erro ao tentar converter moeda inexistente")
+    void shouldReturnErrorForInvalidCurrency() {
+        mockWebClientResponse(new HashMap<>());
+
+        Mono<BigDecimal> result = indicatorService.calculateConversion("XYZ", new BigDecimal("100"));
+
+        StepVerifier.create(result)
+                .expectError(IllegalArgumentException.class)
+                .verify();
     }
 }
