@@ -43,6 +43,10 @@ public class IndicatorService {
 
         @Cacheable("historical")
         public Mono<List<HistoricalDataPoint>> getHistoricalData(String currencyCode, int days) {
+                if (currencyCode == null || currencyCode.length() != 3) {
+                        return Mono.error(new IllegalArgumentException("Código de moeda inválido"));
+                }
+
                 String historicalApiUrl = String.format("/daily/%s-BRL/%d", currencyCode, days);
 
                 return webClient.get()
@@ -52,7 +56,6 @@ public class IndicatorService {
                                 .bodyToMono(new ParameterizedTypeReference<List<HistoricalDataPoint>>() {
                                 })
                                 .onErrorResume(e -> {
-                                        // Logar erro em ambiente real (ex: Slf4j)
                                         System.err.println("Erro ao buscar histórico para " + currencyCode + ": "
                                                         + e.getMessage());
                                         return Mono.just(Collections.emptyList());
@@ -60,6 +63,10 @@ public class IndicatorService {
         }
 
         public Mono<BigDecimal> calculateConversion(String currencyCode, BigDecimal amountInBrl) {
+                if (amountInBrl == null || amountInBrl.compareTo(BigDecimal.ZERO) < 0) {
+                        return Mono.error(new IllegalArgumentException("Valor inválido para conversão"));
+                }
+
                 return getAllIndicators()
                                 .flatMap(indicators -> Mono.justOrEmpty(indicators.stream()
                                                 .filter(i -> i.getCode() != null
@@ -68,11 +75,17 @@ public class IndicatorService {
                                 .switchIfEmpty(Mono.error(
                                                 new IllegalArgumentException("Moeda não encontrada: " + currencyCode)))
                                 .map(indicator -> {
-                                        if (indicator.getSell() == null
-                                                        || indicator.getSell().compareTo(BigDecimal.ZERO) == 0) {
-                                                throw new IllegalArgumentException("Cotação inválida para conversão.");
+                                        BigDecimal sellPrice = indicator.getSell();
+                                        if (sellPrice == null || sellPrice.compareTo(BigDecimal.ZERO) == 0) {
+                                                sellPrice = indicator.getBuy();
                                         }
-                                        return amountInBrl.divide(indicator.getSell(), 2, RoundingMode.HALF_EVEN);
+
+                                        if (sellPrice == null || sellPrice.compareTo(BigDecimal.ZERO) == 0) {
+                                                throw new IllegalArgumentException(
+                                                                "Cotação indisponível para conversão.");
+                                        }
+
+                                        return amountInBrl.divide(sellPrice, 2, RoundingMode.HALF_EVEN);
                                 });
         }
 
