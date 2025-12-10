@@ -35,13 +35,11 @@ public class NewsService {
                 String targetCountry = StringUtils.hasText(country) ? country : "br";
                 String targetCategory = StringUtils.hasText(category) ? category : "business";
 
+                String finalUrl = String.format("%s/top-headlines?country=%s&category=%s&apiKey=%s",
+                                newsApiUrl, targetCountry, targetCategory, newsApiKey);
+
                 return webClient.get()
-                                .uri(uriBuilder -> uriBuilder
-                                                .path(newsApiUrl + "/top-headlines")
-                                                .queryParam("country", targetCountry)
-                                                .queryParam("category", targetCategory)
-                                                .queryParam("apiKey", newsApiKey)
-                                                .build())
+                                .uri(finalUrl)
                                 .retrieve()
                                 .onStatus(HttpStatusCode::isError, this::handleApiError)
                                 .bodyToMono(NewsResponse.class)

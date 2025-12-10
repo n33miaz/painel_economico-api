@@ -90,15 +90,22 @@ public class IndicatorService {
         }
 
         private Indicator enrichIndicatorData(Indicator indicator) {
-                if (indicator.getCode() != null) {
-                        indicator.setId("currency_" + indicator.getCode());
-                        indicator.setType("currency");
-                } else {
+                boolean isIndex = indicator.getName().toUpperCase().contains("IBOVESPA")
+                                || indicator.getName().toUpperCase().contains("NASDAQ")
+                                || indicator.getName().toUpperCase().contains("BITCOIN");
+
+                if (isIndex) {
                         String cleanName = indicator.getName() != null
                                         ? indicator.getName().replaceAll("\\s+", "")
                                         : "unknown";
                         indicator.setId("index_" + cleanName);
                         indicator.setType("index");
+                } else if (indicator.getCode() != null) {
+                        indicator.setId("currency_" + indicator.getCode());
+                        indicator.setType("currency");
+                } else {
+                        indicator.setId("unknown_" + System.currentTimeMillis());
+                        indicator.setType("unknown");
                 }
                 return indicator;
         }
