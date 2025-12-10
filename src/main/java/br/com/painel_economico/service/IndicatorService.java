@@ -35,19 +35,20 @@ public class IndicatorService {
                                 .onStatus(HttpStatusCode::isError, this::handleApiError)
                                 .bodyToMono(new ParameterizedTypeReference<Map<String, Indicator>>() {
                                 })
-                                .map(responseMap -> responseMap.values().stream()
-                                                .map(this::enrichIndicatorData)
+                                .map(responseMap -> responseMap.entrySet().stream()
+                                                .map(entry -> enrichIndicatorData(entry.getKey(), entry.getValue()))
                                                 .collect(Collectors.toList()))
                                 .defaultIfEmpty(Collections.emptyList());
         }
 
         @Cacheable("historical")
         public Mono<List<HistoricalDataPoint>> getHistoricalData(String currencyCode, int days) {
-                if (currencyCode == null || currencyCode.length() != 3) {
+                if (currencyCode == null || currencyCode.length() < 3) {
                         return Mono.error(new IllegalArgumentException("Código de moeda inválido"));
                 }
 
-                String historicalApiUrl = String.format("/daily/%s-BRL/%d", currencyCode, days);
+                String cleanCode = currencyCode.replace("currency_", "").replace("index_", "");
+                String historicalApiUrl = String.format("/daily/%s-BRL/%d", cleanCode, days);
 
                 return webClient.get()
                                 .uri(AWESOME_API_URL + historicalApiUrl)
@@ -89,23 +90,44 @@ public class IndicatorService {
                                 });
         }
 
-        private Indicator enrichIndicatorData(Indicator indicator) {
-                boolean isIndex = indicator.getName().toUpperCase().contains("IBOVESPA")
-                                || indicator.getName().toUpperCase().contains("NASDAQ")
-                                || indicator.getName().toUpperCase().contains("BITCOIN");
+        private Indicator enrichIndicatorData(String key, Indicator indicator) {
+                // Lista de ativos que queremos tratar como "Índices/Indicadores" na tela
+                // IBOVESPA é bolsa, os outros são termômetros do mercado cripto
+                boolean isIndex = key.equalsIgnoreCase("IBOVESPA")
+                                || key.equalsIgnoreCase("NASDAQ")
+                                || key.equalsIgnoreCase("BTC") // Bitcoin
+                                || key.equalsIgnoreCase("ETH") // Ethereum
+                                || key.equalsIgnoreCase("XRP") // Ripple
+                                || key.equalsIgnoreCase("LTC"); // Litecoin
 
                 if (isIndex) {
-                        String cleanName = indicator.getName() != null
-                                        ? indicator.getName().replaceAll("\\s+", "")
-                                        : "unknown";
-                        indicator.setId("index_" + cleanName);
+                        indicator.setId("index_" + key);
                         indicator.setType("index");
-                } else if (indicator.getCode() != null) {
-                        indicator.setId("currency_" + indicator.getCode());
-                        indicator.setType("currency");
+
+                        switch (key.toUpperCase()) {
+                                case "BTC":
+                                        indicator.setName("Bitcoin (Ref. Mercado)");
+                                        break;
+                                case "ETH":
+                                        indicator.setName("Ethereum (Smart Contracts)");
+                                        break;
+                                case "XRP":
+                                        indicator.setName("XRP (Ripple)");
+                                        break;
+                                case "LTC":
+                                        indicator.setName("Litecoin");
+                                        break;
+                                case "IBOVESPA":
+                                        indicator.setName("Ibovespa B3");
+                                        break;
+                        }
                 } else {
-                        indicator.setId("unknown_" + System.currentTimeMillis());
-                        indicator.setType("unknown");
+                        indicator.setId("currency_" + key);
+                        indicator.setType("currency");
+
+                        if (key.endsWith("T")) {
+                                indicator.setName(indicator.getName() + " (Turismo)");
+                        }
                 }
                 return indicator;
         }
