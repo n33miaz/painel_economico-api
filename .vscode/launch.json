@@ -1,0 +1,26 @@
+{ // ./mvnw spring-boot:run
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug",
+            "request": "launch",
+            "mainClass": "br.com.painel_economico.PainelEconomicoBffApplication",
+            "projectName": "painel_economico",
+            "args": "",
+            "env": {
+                "SPRING_PROFILES_ACTIVE": "dev"
+            },
+            "encoding": "UTF-8"
+        },
+        {
+            "type": "java",
+            "name": "Produção (Simulação)",
+            "request": "launch",
+            "mainClass": "br.com.painel_economico.PainelEconomicoBffApplication",
+            "projectName": "painel_economico",
+            "vmArgs": "-Dspring.profiles.active=prod -Xmx512m",
+            "encoding": "UTF-8"
+        }
+    ]
+}

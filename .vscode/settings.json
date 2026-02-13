@@ -1,0 +1,6 @@
+{
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.dependency.packagePresentation": "hierarchical",
+  "java.dependency.syncWithFolderExplorer": true,
+  "java.configuration.updateBuildConfiguration": "interactive"
+}
