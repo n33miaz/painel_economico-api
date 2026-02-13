@@ -2,6 +2,7 @@ package br.com.painel_economico.service;
 
 import br.com.painel_economico.dto.HistoricalDataPoint;
 import br.com.painel_economico.dto.Indicator;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class IndicatorService {
         private final WebClient webClient;
@@ -29,6 +31,7 @@ public class IndicatorService {
 
         @Cacheable("indicators")
         public Mono<List<Indicator>> getAllIndicators() {
+                log.debug("Buscando todos os indicadores na AwesomeAPI");
                 return webClient.get()
                                 .uri(AWESOME_API_URL + "/all")
                                 .retrieve()
@@ -38,17 +41,21 @@ public class IndicatorService {
                                 .map(responseMap -> responseMap.entrySet().stream()
                                                 .map(entry -> enrichIndicatorData(entry.getKey(), entry.getValue()))
                                                 .collect(Collectors.toList()))
+                                .doOnSuccess(list -> log.debug("Indicadores recuperados: {}", list.size()))
                                 .defaultIfEmpty(Collections.emptyList());
         }
 
         @Cacheable("historical")
         public Mono<List<HistoricalDataPoint>> getHistoricalData(String currencyCode, int days) {
                 if (currencyCode == null || currencyCode.length() < 3) {
+                        log.warn("Tentativa de busca histórica com código inválido: {}", currencyCode);
                         return Mono.error(new IllegalArgumentException("Código de moeda inválido"));
                 }
 
                 String cleanCode = currencyCode.replace("currency_", "").replace("index_", "");
                 String historicalApiUrl = String.format("/daily/%s-BRL/%d", cleanCode, days);
+
+                log.debug("Buscando histórico para: {}", cleanCode);
 
                 return webClient.get()
                                 .uri(AWESOME_API_URL + historicalApiUrl)
@@ -56,11 +63,9 @@ public class IndicatorService {
                                 .onStatus(HttpStatusCode::isError, this::handleApiError)
                                 .bodyToMono(new ParameterizedTypeReference<List<HistoricalDataPoint>>() {
                                 })
-                                .onErrorResume(e -> {
-                                        System.err.println("Erro ao buscar histórico para " + currencyCode + ": "
-                                                        + e.getMessage());
-                                        return Mono.just(Collections.emptyList());
-                                });
+                                .doOnError(e -> log.error("Erro ao buscar histórico para {}: {}", currencyCode,
+                                                e.getMessage()))
+                                .onErrorResume(e -> Mono.just(Collections.emptyList()));
         }
 
         public Mono<BigDecimal> calculateConversion(String currencyCode, BigDecimal amountInBrl) {
@@ -86,40 +91,31 @@ public class IndicatorService {
                                                                 "Cotação indisponível para conversão.");
                                         }
 
-                                        return amountInBrl.divide(sellPrice, 2, RoundingMode.HALF_EVEN);
+                                        BigDecimal result = amountInBrl.divide(sellPrice, 2, RoundingMode.HALF_EVEN);
+                                        log.info("Conversão realizada: {} BRL -> {} {} (Taxa: {})", amountInBrl, result,
+                                                        currencyCode, sellPrice);
+                                        return result;
                                 });
         }
 
         private Indicator enrichIndicatorData(String key, Indicator indicator) {
-                // Lista de ativos que queremos tratar como "Índices/Indicadores" na tela
-                // IBOVESPA é bolsa, os outros são termômetros do mercado cripto
                 boolean isIndex = key.equalsIgnoreCase("IBOVESPA")
                                 || key.equalsIgnoreCase("NASDAQ")
-                                || key.equalsIgnoreCase("BTC") // Bitcoin
-                                || key.equalsIgnoreCase("ETH") // Ethereum
-                                || key.equalsIgnoreCase("XRP") // Ripple
-                                || key.equalsIgnoreCase("LTC"); // Litecoin
+                                || key.equalsIgnoreCase("BTC")
+                                || key.equalsIgnoreCase("ETH")
+                                || key.equalsIgnoreCase("XRP")
+                                || key.equalsIgnoreCase("LTC");
 
                 if (isIndex) {
                         indicator.setId("index_" + key);
                         indicator.setType("index");
 
                         switch (key.toUpperCase()) {
-                                case "BTC":
-                                        indicator.setName("Bitcoin (Ref. Mercado)");
-                                        break;
-                                case "ETH":
-                                        indicator.setName("Ethereum (Smart Contracts)");
-                                        break;
-                                case "XRP":
-                                        indicator.setName("XRP (Ripple)");
-                                        break;
-                                case "LTC":
-                                        indicator.setName("Litecoin");
-                                        break;
-                                case "IBOVESPA":
-                                        indicator.setName("Ibovespa B3");
-                                        break;
+                                case "BTC" -> indicator.setName("Bitcoin (Ref. Mercado)");
+                                case "ETH" -> indicator.setName("Ethereum (Smart Contracts)");
+                                case "XRP" -> indicator.setName("XRP (Ripple)");
+                                case "LTC" -> indicator.setName("Litecoin");
+                                case "IBOVESPA" -> indicator.setName("Ibovespa B3");
                         }
                 } else {
                         indicator.setId("currency_" + key);

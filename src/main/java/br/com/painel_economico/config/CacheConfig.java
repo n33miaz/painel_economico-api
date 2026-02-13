@@ -11,14 +11,14 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class CacheConfig {
 
+    @SuppressWarnings("null")
     @Bean
-    @SuppressWarnings("unchecked")
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager("indicators", "news", "historical");
 
         cacheManager.setAsyncCacheMode(true);
 
-        cacheManager.setCaffeine((Caffeine<Object, Object>) Caffeine.newBuilder()
+        cacheManager.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .maximumSize(100)
                 .recordStats());

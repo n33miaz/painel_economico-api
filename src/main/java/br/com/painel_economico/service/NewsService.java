@@ -3,6 +3,7 @@ package br.com.painel_economico.service;
 import br.com.painel_economico.dto.NewsArticle;
 import br.com.painel_economico.dto.NewsResponse;
 import br.com.painel_economico.dto.Source;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 public class NewsService {
 
@@ -32,10 +34,10 @@ public class NewsService {
 
         @Cacheable("news")
         public Mono<NewsResponse> getTopHeadlines(String country, String category) {
-                System.out.println("--- INICIANDO BUSCA DE NOTÍCIAS ---");
+                log.info("Iniciando busca de notícias. País: [{}], Categoria: [{}]", country, category);
 
                 if (!StringUtils.hasText(newsApiKey)) {
-                        System.err.println("ERRO: API Key não encontrada no .env");
+                        log.warn("API Key não encontrada no .env. Usando dados de fallback (Mock).");
                         return Mono.just(getFallbackNews());
                 }
 
@@ -56,18 +58,17 @@ public class NewsService {
                                 .bodyToMono(NewsResponse.class)
                                 .map(response -> {
                                         if (response.getArticles() == null || response.getArticles().isEmpty()) {
-                                                System.out.println(
-                                                                "ALERTA: A API retornou 0 notícias. Usando Fallback para preencher a tela.");
+                                                log.warn("A API retornou 0 notícias. Ativando Fallback.");
                                                 return getFallbackNews();
                                         }
-                                        System.out.println("SUCESSO: " + response.getTotalResults()
-                                                        + " notícias reais encontradas.");
+                                        log.info("Sucesso: {} notícias encontradas.", response.getTotalResults());
                                         return response;
                                 })
-                                .doOnError(e -> {
-                                        System.err.println("ERRO TÉCNICO NA API: " + e.getMessage());
-                                })
-                                .onErrorResume(e -> Mono.just(getFallbackNews()));
+                                .doOnError(e -> log.error("Falha ao conectar com NewsAPI: {}", e.getMessage()))
+                                .onErrorResume(e -> {
+                                        log.info("Retornando notícias de fallback devido a erro na API.");
+                                        return Mono.just(getFallbackNews());
+                                });
         }
 
         // fallback com noticias mockadas
