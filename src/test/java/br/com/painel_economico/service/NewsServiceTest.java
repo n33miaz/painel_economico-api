@@ -69,15 +69,17 @@ class NewsServiceTest {
     }
 
     @Test
-    @DisplayName("Deve lançar erro se a API Key não estiver configurada")
-    void shouldErrorIfApiKeyIsMissing() {
+    @DisplayName("Deve retornar fallback se a API Key não estiver configurada")
+    void shouldReturnFallbackIfApiKeyIsMissing() {
+        // Força a API Key a ser vazia
         ReflectionTestUtils.setField(newsService, "newsApiKey", "");
 
         Mono<NewsResponse> result = newsService.getTopHeadlines("br", "business");
 
         StepVerifier.create(result)
-                .expectErrorMatches(throwable -> throwable instanceof IllegalStateException &&
-                        throwable.getMessage().contains("API Key de notícias não configurada"))
-                .verify();
+                .expectNextMatches(response -> response.getStatus().equals("ok") &&
+                        response.getArticles().size() == 4 && // O seu fallback tem 4 artigos
+                        response.getArticles().get(0).getSource().getName().equals("InfoMoney"))
+                .verifyComplete();
     }
 }
