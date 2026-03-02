@@ -15,9 +15,11 @@ import reactor.test.StepVerifier;
 import java.util.function.Function;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("null")
 class NewsServiceTest {
 
     @Mock
@@ -47,6 +49,7 @@ class NewsServiceTest {
     private void mockWebClientSuccess(NewsResponse response) {
         when(webClient.get()).thenReturn(requestHeadersUriSpec);
         when(requestHeadersUriSpec.uri(any(Function.class))).thenReturn(requestHeadersSpec);
+        when(requestHeadersSpec.header(anyString(), anyString())).thenReturn(requestHeadersSpec);
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
         when(responseSpec.bodyToMono(NewsResponse.class)).thenReturn(Mono.just(response));

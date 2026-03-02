@@ -15,6 +15,7 @@ import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/auth")
+@SuppressWarnings("null")
 public class AuthController {
 
     private final UserRepository userRepository;

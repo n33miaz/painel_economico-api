@@ -7,6 +7,8 @@ import java.math.RoundingMode;
 
 @Data
 public class Indicator {
+    private String id;
+    private String type;
     private String code;
 
     @JsonAlias("codein")
@@ -23,15 +25,9 @@ public class Indicator {
     @JsonAlias({ "pctChange", "varBid" })
     private BigDecimal variation;
 
-    private String id;
-    private String type;
+    private Double points;
 
     public BigDecimal getVariation() {
         return variation != null ? variation.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
-    }
-
-    public void setPoints(double doubleValue) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setPoints'");
     }
 }

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.core.ParameterizedTypeReference;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
@@ -49,14 +50,10 @@ public class BrapiProvider implements MarketDataProvider {
 
     private Mono<List<Indicator>> fetchFromBrapi(String tickers) {
         return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .scheme("https")
-                        .host("brapi.dev")
-                        .path("/api/quote/" + tickers)
-                        .queryParam("token", brapiToken)
-                        .build())
+                .uri(brapiApiUrl + "/quote/" + tickers + "?token=" + brapiToken)
                 .retrieve()
-                .bodyToMono(Map.class)
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {
+                })
                 .map(this::parseBrapiResponse)
                 .onErrorResume(e -> {
                     log.error("Erro ao buscar dados na Brapi para tickers [{}]: {}", tickers, e.getMessage());
