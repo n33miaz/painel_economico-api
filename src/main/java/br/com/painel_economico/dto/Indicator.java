@@ -29,4 +29,9 @@ public class Indicator {
     public BigDecimal getVariation() {
         return variation != null ? variation.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
     }
+
+    public void setPoints(double doubleValue) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'setPoints'");
+    }
 }

@@ -32,6 +32,13 @@ public class IndicatorController {
                 .map(ResponseEntity::ok);
     }
 
+    @Operation(summary = "Buscar ativo específico", description = "Busca cotação de um ativo específico (ex: PETR4, AAPL34).")
+    @GetMapping("/search")
+    public Mono<ResponseEntity<List<Indicator>>> searchIndicator(@RequestParam String query) {
+        return indicatorService.searchIndicators(query)
+                .map(ResponseEntity::ok);
+    }
+
     @Operation(summary = "Dados Históricos", description = "Retorna o histórico de variação de uma moeda nos últimos dias.")
     @GetMapping("/historical/{currencyCode}")
     public Mono<ResponseEntity<List<HistoricalDataPoint>>> getHistoricalData(
