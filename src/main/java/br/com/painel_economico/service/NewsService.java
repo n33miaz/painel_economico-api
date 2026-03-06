@@ -39,7 +39,7 @@ public class NewsService {
 
         @Cacheable("news")
         public Mono<NewsResponse> getTopHeadlines(String country, String category) {
-                log.info("Iniciando agregação de notícias via RSS Feeds...");
+                log.info("Iniciando agregacao de noticias via RSS Feeds...");
 
                 return Flux.fromIterable(RSS_FEEDS.entrySet())
                                 .flatMap(entry -> fetchAndParseRss(entry.getKey(), entry.getValue()))
