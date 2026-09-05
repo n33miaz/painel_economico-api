@@ -3,6 +3,7 @@ package br.com.economize.service.ai;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
+import br.com.economize.dto.ai.ChatTurn;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -51,11 +52,22 @@ public class OpenAiCompatibleChatClient {
      *                             com mensagem escrita por nós
      */
     public String complete(AiCallTarget target, String systemPrompt, String userPrompt, Duration timeout) {
+        return complete(target, systemPrompt, List.of(), userPrompt, timeout);
+    }
+
+    public String complete(AiCallTarget target, String systemPrompt, List<ChatTurn> history,
+                           String userPrompt, Duration timeout) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("model", target.model());
-        payload.put("messages", List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userPrompt)));
+        // sistema, a conversa ate aqui, e so entao a pergunta nova — a ordem e
+        // o contrato do formato de chat de todos os provedores compativeis
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", systemPrompt));
+        for (ChatTurn turn : history) {
+            messages.add(Map.of("role", turn.role(), "content", turn.content()));
+        }
+        messages.add(Map.of("role", "user", "content", userPrompt));
+        payload.put("messages", messages);
         if (target.maxTokens() != null) {
             payload.put("max_tokens", target.maxTokens());
         }

@@ -19,6 +19,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -131,7 +132,7 @@ class AiChatCallerFactoryTest {
         SecretCipher cipher = new SecretCipher(KEY_1, "k1", "");
         when(repository.findByUserId(user.getId()))
                 .thenReturn(Optional.of(settingsWith(cipher, AiProvider.ANTHROPIC, "claude-sonnet-4-5")));
-        when(httpClient.complete(any(), anyString(), anyString(), any())).thenReturn("resposta");
+        when(httpClient.complete(any(), anyString(), anyList(), anyString(), any())).thenReturn("resposta");
         AiChatCallerFactory factory = factory(cipher);
 
         AiChatCaller caller = factory.resolve(user, true).orElseThrow();
@@ -139,7 +140,7 @@ class AiChatCallerFactoryTest {
         assertThat(caller.complete("sistema", "pergunta")).isEqualTo("resposta");
 
         ArgumentCaptor<AiCallTarget> alvo = ArgumentCaptor.forClass(AiCallTarget.class);
-        verify(httpClient).complete(alvo.capture(), anyString(), anyString(), any(Duration.class));
+        verify(httpClient).complete(alvo.capture(), anyString(), anyList(), anyString(), any(Duration.class));
         assertThat(alvo.getValue().provider()).isEqualTo(AiProvider.ANTHROPIC);
         assertThat(alvo.getValue().model()).isEqualTo("claude-sonnet-4-5");
         assertThat(alvo.getValue().apiKey()).isEqualTo(CHAVE_DO_USUARIO);

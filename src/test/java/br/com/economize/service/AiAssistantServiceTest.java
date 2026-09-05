@@ -1,6 +1,7 @@
 package br.com.economize.service;
 
 import br.com.economize.model.BankTransaction;
+import br.com.economize.dto.ai.ChatTurn;
 import br.com.economize.model.User;
 import br.com.economize.repository.BankTransactionRepository;
 import br.com.economize.repository.TransactionRepository;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -78,7 +80,7 @@ class AiAssistantServiceTest {
     void shouldAnswerThroughTheServerKeyByDefault() {
         when(caller.userOwned()).thenReturn(false);
         when(caller.describe()).thenReturn("chave do servidor / gemini-2.0-flash");
-        when(caller.complete(anyString(), anyString())).thenReturn("Você gastou R$ 120,50 na academia.");
+        when(caller.complete(anyString(), anyList(), anyString())).thenReturn("Você gastou R$ 120,50 na academia.");
         // true: o assistente ACEITA o fallback, e é isso que garante que quem
         // nunca abriu a tela de IA continue sendo atendido
         when(factory.resolve(eq(user), eq(true))).thenReturn(Optional.of(caller));
@@ -93,25 +95,25 @@ class AiAssistantServiceTest {
     void shouldAnswerThroughTheUserKeyWhenConfigured() {
         when(caller.userOwned()).thenReturn(true);
         when(caller.describe()).thenReturn("chave do usuário / ANTHROPIC / claude-sonnet-4-5");
-        when(caller.complete(anyString(), anyString())).thenReturn("resposta do provedor do usuário");
+        when(caller.complete(anyString(), anyList(), anyString())).thenReturn("resposta do provedor do usuário");
         when(factory.resolve(eq(user), eq(true))).thenReturn(Optional.of(caller));
 
         assertThat(service.askAssistant(EMAIL, "quanto gastei?").block())
                 .isEqualTo("resposta do provedor do usuário");
-        verify(caller).complete(anyString(), eq("quanto gastei?"));
+        verify(caller).complete(anyString(), anyList(), eq("quanto gastei?"));
     }
 
     @Test
     @DisplayName("O contexto financeiro do usuário vai no prompt de sistema, e a pergunta vai separada")
     void shouldBuildTheSystemPromptWithTheFinancialContext() {
-        when(caller.complete(anyString(), anyString())).thenReturn("ok");
+        when(caller.complete(anyString(), anyList(), anyString())).thenReturn("ok");
         when(factory.resolve(eq(user), eq(true))).thenReturn(Optional.of(caller));
 
         service.askAssistant(EMAIL, "e o cartão?").block();
 
         ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> pergunta = ArgumentCaptor.forClass(String.class);
-        verify(caller).complete(system.capture(), pergunta.capture());
+        verify(caller).complete(system.capture(), anyList(), pergunta.capture());
         assertThat(system.getValue())
                 .contains("Nino")
                 .contains("RESUMO BANCÁRIO")
@@ -138,7 +140,7 @@ class AiAssistantServiceTest {
     @DisplayName("Falha do provedor do usuário sobe classificada, para virar 502 com reason")
     void providerFailureShouldSurfaceClassified() {
         when(factory.resolve(eq(user), eq(true))).thenReturn(Optional.of(caller));
-        when(caller.complete(anyString(), anyString())).thenThrow(
+        when(caller.complete(anyString(), anyList(), anyString())).thenThrow(
                 new AiProviderException(AiProviderException.Reason.RATE_LIMIT,
                         "O provedor recusou por limite de uso da sua conta."));
 
@@ -154,5 +156,38 @@ class AiAssistantServiceTest {
 
         assertThatThrownBy(() -> service.askAssistant("fantasma@economize.app", "oi").block())
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("A conversa até aqui vai junto — sem ela o assistente não tem memória")
+    void shouldForwardTheConversationHistory() {
+        when(caller.complete(anyString(), anyList(), anyString())).thenReturn("ok");
+        when(factory.resolve(eq(user), eq(true))).thenReturn(Optional.of(caller));
+        List<ChatTurn> conversa = List.of(
+                new ChatTurn("user", "Quanto gastei com mercado?"),
+                new ChatTurn("assistant", "Foram R$ 400."));
+
+        service.askAssistant(EMAIL, "E no mês passado?", conversa).block();
+
+        // Sem isto, "e no mês passado?" chegava ao provedor como uma primeira
+        // pergunta solta, e a resposta era necessariamente sobre nada
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatTurn>> historico = ArgumentCaptor.forClass(List.class);
+        verify(caller).complete(anyString(), historico.capture(), eq("E no mês passado?"));
+        assertThat(historico.getValue()).isEqualTo(conversa);
+    }
+
+    @Test
+    @DisplayName("Sem histórico, a chamada é a de sempre: lista vazia, nunca nula")
+    void shouldDefaultToAnEmptyHistory() {
+        when(caller.complete(anyString(), anyList(), anyString())).thenReturn("ok");
+        when(factory.resolve(eq(user), eq(true))).thenReturn(Optional.of(caller));
+
+        service.askAssistant(EMAIL, "quanto gastei?").block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatTurn>> historico = ArgumentCaptor.forClass(List.class);
+        verify(caller).complete(anyString(), historico.capture(), anyString());
+        assertThat(historico.getValue()).isEmpty();
     }
 }

@@ -1,5 +1,6 @@
 package br.com.economize.service;
 
+import br.com.economize.dto.ai.ChatTurn;
 import br.com.economize.model.BankTransaction;
 import br.com.economize.model.Transaction;
 import br.com.economize.model.User;
@@ -41,7 +42,34 @@ public class AiAssistantService {
         this.transactionRepository = transactionRepository;
     }
 
+    /**
+     * Quantas linhas da carteira entram no contexto.
+     *
+     * <p>Nao havia teto: um {@code forEach} sobre TODAS as transacoes da
+     * carteira. Quem opera com frequencia mandava centenas de linhas em cada
+     * pergunta — prompt que cresce sem limite e conta que cresce junto, ja que
+     * cada token e pago. As 40 mais recentes sao o que uma resposta sobre
+     * "minha carteira" precisa; o resto ja esta somado no resumo.
+     */
+    private static final int MAX_WALLET_LINES = 40;
+
+    /** Mesma logica das bancarias, que ja tinham teto de 15. */
+    private static final int MAX_BANK_LINES = 15;
+
     public Mono<String> askAssistant(String email, String userQuestion) {
+        return askAssistant(email, userQuestion, List.of());
+    }
+
+    /**
+     * A pergunta com a conversa ate aqui.
+     *
+     * <p>Sem o historico o assistente nao tinha memoria nenhuma: "e no mes
+     * passado?" chegava ao provedor como uma primeira pergunta solta, e a
+     * resposta era necessariamente sobre nada. O dado financeiro do prompt
+     * continua vindo do BANCO a cada chamada — quem manda o historico e o app,
+     * mas quem responde pelos numeros e o servidor.
+     */
+    public Mono<String> askAssistant(String email, String userQuestion, List<ChatTurn> history) {
         return Mono.fromCallable(() -> {
             User user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
@@ -78,8 +106,9 @@ public class AiAssistantService {
             AiChatCaller caller = chatCallerFactory.resolve(user, true)
                     .orElseThrow(() -> new IllegalStateException("Nenhum caminho de IA disponível"));
 
-            log.info("Enviando prompt para a IA para o usuário: {} ({})", email, caller.describe());
-            return caller.complete(systemPrompt, userQuestion);
+            log.info("Enviando prompt para a IA para o usuário: {} ({}, {} fala(s) de contexto))",
+                    email, caller.describe(), history.size());
+            return caller.complete(systemPrompt, history, userQuestion);
 
         }).subscribeOn(Schedulers.boundedElastic());
     }
@@ -103,7 +132,7 @@ public class AiAssistantService {
         sb.append("Total Saídas: R$ ").append(totalExpense).append("\n");
         sb.append("Últimas transações bancárias:\n");
 
-        bankTxs.stream().limit(15).forEach(t -> {
+        bankTxs.stream().limit(MAX_BANK_LINES).forEach(t -> {
             sb.append(String.format("- %s | %s | R$ %s\n", t.getDate().toLocalDate(), t.getDescription(), t.getAmount()));
         });
 

@@ -22,12 +22,16 @@ public class AiAssistantController {
     private final AiAssistantService aiAssistantService;
 
     @PostMapping
-    @Operation(summary = "Enviar mensagem para a IA", description = "Envia uma pergunta e recebe uma resposta baseada nos dados financeiros do usuário.")
+    @Operation(summary = "Enviar mensagem para a IA",
+            description = "Envia uma pergunta e recebe uma resposta baseada nos dados financeiros do usuário. "
+                    + "O campo `history` (opcional, até 12 falas) leva a conversa até aqui — sem ele o "
+                    + "assistente responde cada pergunta como se fosse a primeira. Os números do contexto "
+                    + "vêm sempre do banco, nunca do que o cliente mandou.")
     public Mono<ResponseEntity<Map<String, String>>> askAssistant(
             @AuthenticationPrincipal String email,
             @Valid @RequestBody ChatRequest request) {
 
-        return aiAssistantService.askAssistant(email, request.message())
+        return aiAssistantService.askAssistant(email, request.message(), request.history())
                 .map(response -> ResponseEntity.ok(Map.of("reply", response)));
     }
 }

@@ -1,17 +1,21 @@
 package br.com.economize.service.ai;
 
+import br.com.economize.dto.ai.ChatTurn;
 import br.com.economize.model.User;
 import br.com.economize.model.UserAiSettings;
 import br.com.economize.repository.UserAiSettingsRepository;
 import br.com.economize.security.SecretCipher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -120,9 +124,19 @@ public class AiChatCallerFactory {
     private class ServerCaller implements AiChatCaller {
 
         @Override
-        public String complete(String systemPrompt, String userPrompt) {
-            Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt)));
-            return serverChatClient.prompt(prompt).call().content();
+        public String complete(String systemPrompt, List<ChatTurn> history, String userPrompt) {
+            List<Message> messages = new ArrayList<>();
+            messages.add(new SystemMessage(systemPrompt));
+            for (ChatTurn turn : history) {
+                // "assistant" vira AssistantMessage e "user" vira UserMessage:
+                // sem essa distincao o modelo le as proprias respostas como se
+                // fossem pedidos do usuario
+                messages.add("assistant".equals(turn.role())
+                        ? new AssistantMessage(turn.content())
+                        : new UserMessage(turn.content()));
+            }
+            messages.add(new UserMessage(userPrompt));
+            return serverChatClient.prompt(new Prompt(messages)).call().content();
         }
 
         @Override
@@ -146,8 +160,8 @@ public class AiChatCallerFactory {
         }
 
         @Override
-        public String complete(String systemPrompt, String userPrompt) {
-            return httpClient.complete(target, systemPrompt, userPrompt, properties.getTimeout());
+        public String complete(String systemPrompt, List<ChatTurn> history, String userPrompt) {
+            return httpClient.complete(target, systemPrompt, history, userPrompt, properties.getTimeout());
         }
 
         @Override
