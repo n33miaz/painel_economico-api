@@ -7,6 +7,7 @@ import br.com.economize.repository.UserRepository;
 import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
+import br.com.economize.service.MfaService;
 import br.com.economize.service.PasswordService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,11 @@ class AuthControllerTest {
 
     @MockitoBean
     private PasswordService passwordService;
+
+    // O login consulta o segundo fator; sem o bean o contexto do WebFluxTest
+    // nem sobe. O login em dois passos tem suite propria: AuthMfaLoginTest
+    @MockitoBean
+    private MfaService mfaService;
 
     @Test
     @DisplayName("POST /forgot-password - Deve responder 202 com mensagem neutra")

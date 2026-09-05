@@ -61,8 +61,14 @@ public class RateLimitFilter implements WebFilter {
     // para o servidor e por isso mesmo seria barato de adivinhar. O código tem
     // 40 bits; a 10 tentativas por minuto a força bruta deixa de ser um plano.
     // Só o /join — criar a casa, ler e configurar seguem no balde padrão.
+    //
+    // Os dois caminhos de login entram porque sao adivinhaveis por definicao: a
+    // senha, e depois dela os SEIS DIGITOS do segundo fator. A 10 tentativas por
+    // minuto, varrer um milhao de combinacoes leva quase dois anos — e o codigo
+    // vale 30 segundos. Sem o balde caro aqui, o segundo fator seria decorativo.
     private static final Set<String> EXPENSIVE_PREFIXES = Set.of(
-            "/api/v1/chat", "/api/v1/reports", "/api/v1/ai/settings/test", "/api/v1/family/join");
+            "/api/v1/chat", "/api/v1/reports", "/api/v1/ai/settings/test", "/api/v1/family/join",
+            "/api/v1/auth/login");
 
     private final ConcurrentMap<String, Bucket> standardBuckets = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Bucket> expensiveBuckets = new ConcurrentHashMap<>();
