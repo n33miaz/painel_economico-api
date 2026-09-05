@@ -417,11 +417,11 @@ class PluggySyncServiceTest {
     void syncShouldRejectDaysOutOfRange() {
         assertThatThrownBy(() -> service.sync(EMAIL, -5))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("days deve estar entre 1 e 1825");
+                .hasMessageContaining("days deve estar entre 1 e 400");
 
         assertThatThrownBy(() -> service.sync(EMAIL, 999999))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("days deve estar entre 1 e 1825");
+                .hasMessageContaining("days deve estar entre 1 e 400");
 
         // nem o usuário é consultado: é validação de entrada pura, antes de I/O
         verify(userRepository, never()).findByEmail(anyString());

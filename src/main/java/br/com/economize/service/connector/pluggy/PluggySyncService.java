@@ -45,21 +45,38 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PluggySyncService {
 
-    // Teto da janela de sincronização. A instância da API no Render roda com
-    // -Xmx360m (JAVA_OPTS do render.yaml) e o pipeline segura ao mesmo tempo: as
+    // Teto da janela de sincronização. O pipeline segura ao mesmo tempo: as
     // ParsedTransaction da janela inteira, as entidades novas, o
     // existingInWindow do BankStatementService (tudo que o usuário JÁ tem na
     // mesma janela, como entidades gerenciadas) e os dois mapas do ledger de
     // reconciliação — na prática ~3 KB de heap vivo por transação.
-    //   1825 dias (5 anos) × usuário pesado (2 conexões, 3 contas, ~150
-    //   lançamentos/mês por conta) ≈ 27 mil transações ≈ 80 MB, ao lado dos
-    //   ~150 MB de contexto Spring + pool: cabe.
-    // É também uma janela MAIOR do que qualquer conector de Open Finance
-    // devolve (12–24 meses), então o teto não corta caso de uso real. Sem ele,
-    // ?days=999999 caminhava para as 100 mil transações POR CONTA do teto de
-    // páginas do PluggyClient (~300 MB) e derrubava a instância.
+    //
+    // Eram 1825 dias (5 anos), e a conta que os justificava usava um heap de
+    // 360 MB que NUNCA existiu de verdade: o container do plano free tem 512 MB
+    // no total, e metaspace + buffers da Netty + pilhas de thread comem a
+    // diferença. Em 05/09 um sync de cinco conexões matou o processo (502 aos
+    // 66s) e a API ficou quatro minutos fora do ar. O JAVA_OPTS passou a caber
+    // no container; este teto passou a caber no JAVA_OPTS.
+    //
+    // 400 dias cobrem "o ano passado inteiro" com folga e continuam MAIORES do
+    // que a janela que qualquer conector de Open Finance devolve (12–24 meses,
+    // e na prática 12). O teto não corta caso de uso real — corta o pedido
+    // absurdo, que era ?days=999999 caminhando para as 100 mil transações POR
+    // CONTA do limite de páginas do PluggyClient.
     private static final int MIN_SYNC_DAYS = 1;
-    private static final int MAX_SYNC_DAYS = 1825;
+    private static final int MAX_SYNC_DAYS = 400;
+
+    /**
+     * Teto de linhas por sincronização.
+     *
+     * <p>A janela limita o TEMPO, não o volume: quem tem oito contas ativas
+     * estoura o orçamento de memória dentro de uma janela perfeitamente
+     * razoável. Passar daqui responde 400 com o que fazer (sincronizar em
+     * janelas menores) em vez de o processo morrer levando junto a sessão de
+     * todo mundo — 15 mil linhas × ~3 KB ≈ 45 MB, que cabe nos 256 MB de heap
+     * ao lado do contexto do Spring.
+     */
+    private static final int MAX_SYNC_TRANSACTIONS = 15_000;
 
     private final PluggyClient pluggyClient;
     private final UserRepository userRepository;
@@ -179,6 +196,15 @@ public class PluggySyncService {
                     cardCredits.offer(mapped.getAmount());
                 }
                 parsed.add(mapped);
+                if (parsed.size() > MAX_SYNC_TRANSACTIONS) {
+                    // Aborta ANTES de o pipeline dobrar a memória (entidades +
+                    // ledger): nada foi gravado ainda além das origens, e a
+                    // próxima sync com janela menor resolve
+                    throw new IllegalArgumentException(String.format(
+                            "Volume acima do limite: mais de %d lançamentos na janela de %d dias. "
+                                    + "Sincronize em janelas menores (ex.: ?days=90).",
+                            MAX_SYNC_TRANSACTIONS, days));
+                }
             }
         }
         log.info("Pluggy sync: {} transações na janela {}..{} em {} item(ns) para user={}",

@@ -87,6 +87,27 @@ services:
       #   PLUGGY_ITEM_IDS / PLUGGY_OWNER_EMAIL
       #     Cadastradas a mao em 15/08; conferir depois de cada sync do blueprint.
       # ----------------------------------------------------------------------
-      # O plano free tem 512 MB; sobra espaço para metaspace e threads fora da heap
+      # O plano free tem 512 MB — e o que estoura NAO e o heap do Java, e o
+      # LIMITE DO CONTAINER. Com -Xmx360m a conta so fechava ignorando tudo o
+      # que vive fora do heap: metaspace (~120 MB num Spring Boot deste
+      # tamanho), code cache, buffers diretos da Netty e a pilha de cada
+      # thread. Somados, passavam de 512 MB e o processo era MORTO pelo
+      # sistema — 05/09, o sync do Pluggy derrubou a API e o Render levou
+      # quatro minutos respondendo 503 (x-render-routing: hibernate-wake-error)
+      # ate reerguer o container.
+      #
+      # A diferenca que estes valores fazem: com o teto abaixo do limite do
+      # container, faltar memoria vira UMA requisicao com erro 500 (que o Java
+      # sabe reportar e da qual ele se recupera) em vez do servico inteiro
+      # caindo para todo mundo.
+      #
+      #   MaxRAMPercentage=50 .. 256 MB de heap, e acompanha o plano se ele mudar
+      #   MaxMetaspaceSize ... teto explicito; sem ele o metaspace cresce ate o
+      #                        container acabar
+      #   MaxDirectMemorySize  a Netty aloca fora do heap e, sem teto, ignora o Xmx
+      #   Xss512k ............ ~30 threads do boundedElastic a 1 MB era 1 MB por
+      #                        thread desperdicado
+      #   UseSerialGC ........ heap pequeno em 0,1 CPU: o G1 cobra mais em
+      #                        estruturas e threads de GC do que devolve aqui
       - key: JAVA_OPTS
-        value: -Xms128m -Xmx360m
+        value: -XX:MaxRAMPercentage=50 -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC
