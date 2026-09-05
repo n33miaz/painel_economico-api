@@ -296,8 +296,10 @@
 					</execution>
 					<!-- Catraca: o build FALHA se a cobertura cair abaixo do piso.
 					     Os valores são o patamar já alcançado, arredondado para
-					     baixo — não são a meta (90%), são a garantia de que o
-					     número não desce enquanto a meta não chega. -->
+					     baixo — não são a meta, são a garantia de que o número
+					     não desce. LINE chegou aos 90% pedidos (90,87% em
+					     05/09); BRANCH está em 79,12% e a catraca sobe junto a
+					     cada rodada que a empurra. -->
 					<execution>
 						<id>check</id>
 						<phase>test</phase>
@@ -312,12 +314,12 @@
 										<limit>
 											<counter>LINE</counter>
 											<value>COVEREDRATIO</value>
-											<minimum>0.88</minimum>
+											<minimum>0.90</minimum>
 										</limit>
 										<limit>
 											<counter>BRANCH</counter>
 											<value>COVEREDRATIO</value>
-											<minimum>0.75</minimum>
+											<minimum>0.78</minimum>
 										</limit>
 									</limits>
 								</rule>
