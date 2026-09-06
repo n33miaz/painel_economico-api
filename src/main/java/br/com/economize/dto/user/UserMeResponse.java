@@ -10,7 +10,9 @@ public record UserMeResponse(
         String name,
         String email,
         OffsetDateTime createdAt,
-        OffsetDateTime lastLoginAt
+        OffsetDateTime lastLoginAt,
+        /** Senha provisoria: o app precisa levar direto para a troca (V21). */
+        boolean mustChangePassword
 ) {
     public static UserMeResponse from(User user) {
         return new UserMeResponse(
@@ -18,6 +20,7 @@ public record UserMeResponse(
                 user.getName(),
                 user.getEmail(),
                 user.getCreatedAt(),
-                user.getLastLoginAt());
+                user.getLastLoginAt(),
+                user.isMustChangePassword());
     }
 }

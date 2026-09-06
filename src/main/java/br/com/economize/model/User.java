@@ -39,6 +39,14 @@ public class User implements UserDetails {
     @Column(name = "last_login_at")
     private OffsetDateTime lastLoginAt;
 
+    /**
+     * Senha provisoria pendente de troca (V21). Verdadeiro so em conta criada
+     * por outra pessoa: enquanto nao for trocada, alguem alem do dono conhece
+     * a senha. A marca e do servidor de proposito — ver a migration.
+     */
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = OffsetDateTime.now();

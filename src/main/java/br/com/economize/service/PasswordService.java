@@ -70,6 +70,10 @@ public class PasswordService {
 
         User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
+        // Redefinir por e-mail também resolve a pendência da senha provisória
+        // (V21): quem chegou aqui provou o acesso à caixa de entrada e acabou
+        // de escolher uma senha que só ela conhece
+        user.setMustChangePassword(false);
         userRepository.save(user);
 
         resetToken.setUsedAt(OffsetDateTime.now());
@@ -87,6 +91,9 @@ public class PasswordService {
         }
 
         user.setPassword(passwordEncoder.encode(newPassword));
+        // A troca cumpre a pendencia da senha provisoria (V21): daqui em diante
+        // a unica pessoa que sabe a senha e o dono da conta
+        user.setMustChangePassword(false);
         userRepository.save(user);
         log.info("Senha alterada pelo próprio usuário {}", user.getId());
     }

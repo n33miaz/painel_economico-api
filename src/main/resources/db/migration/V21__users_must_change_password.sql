@@ -1,0 +1,15 @@
+-- SENHA PROVISÓRIA — a conta que nasce com senha de terceiro precisa trocá-la.
+--
+-- O caso concreto: uma conta criada por outra pessoa (o dono da casa cadastrando
+-- alguém da família) nasce com uma senha que essa pessoa NÃO escolheu e que
+-- alguém mais conhece. Enquanto ela não for trocada, "só o dono entra na conta"
+-- é falso.
+--
+-- A marca é do SERVIDOR, e não uma tela que o app decide mostrar: se ela vivesse
+-- só no aplicativo, bastaria entrar por outro cliente (ou por uma versão antiga
+-- do APK) para pular a troca. Aqui ela viaja em GET /users/me e some no primeiro
+-- POST /users/me/change-password bem-sucedido.
+--
+-- DEFAULT FALSE porque é o estado de todo mundo que já existe: quem escolheu a
+-- própria senha no cadastro não deve nada a ninguém.
+ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
