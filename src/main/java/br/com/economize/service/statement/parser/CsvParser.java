@@ -211,7 +211,12 @@ public class CsvParser implements StatementParserStrategy {
     }
 
     private String normalizeNumber(String raw) {
-        String value = raw.replace("R$", "").replaceAll("\\s+", "").trim();
+        // `\s` NÃO casa com espaço não-quebrável, e é justamente ele que o
+        // Flash põe entre "R$" e o número ("-R$ 609,79"): o valor chegava
+        // ao BigDecimal com o U+00A0 no meio, estourava, e o extrato inteiro
+        // era descartado linha a linha como "valor ilegível". `\h` cobre os
+        // dois — é a mesma armadilha que já mordeu o resumo do relatório.
+        String value = raw.replace("R$", "").replaceAll("[\\s\\h]+", "").trim();
         int lastComma = value.lastIndexOf(',');
         int lastDot = value.lastIndexOf('.');
         if (lastComma > lastDot) {

@@ -320,6 +320,24 @@ class CsvParserFormatsTest {
     }
 
     @Test
+    @DisplayName("Espaco NAO-QUEBRAVEL entre o cifrao e o numero nao descarta a linha")
+    void espacoNaoQuebravelNoValor() {
+        // O que o Flash exporta de verdade: U+00A0 entre "R$" e o numero. O
+        // `\s` do Java NAO casa com ele — o valor chegava ao BigDecimal com o
+        // caractere no meio, estourava, e as 15 linhas do extrato sumiam uma a
+        // uma como "valor ilegivel". Mesma armadilha do resumo do relatorio.
+        String nbsp = "\u00A0";
+        List<ParsedTransaction> lidas = ler(
+                "Data,Movimentação,Valor\n"
+                        + "29/08/2026,SUPERMERCADO SERO,\"-R$" + nbsp + "609,79\"\n"
+                        + "28/08/2026,Depósito transferido,\"R$" + nbsp + "735,00\"\n");
+
+        assertThat(lidas).hasSize(2);
+        assertThat(lidas.get(0).getAmount()).isEqualByComparingTo(new BigDecimal("-609.79"));
+        assertThat(lidas.get(1).getAmount()).isEqualByComparingTo(new BigDecimal("735.00"));
+    }
+
+    @Test
     @DisplayName("Declara o formato que atende")
     void declaraOFormato() {
         assertThat(parser.format()).isEqualTo(StatementFormat.CSV);
