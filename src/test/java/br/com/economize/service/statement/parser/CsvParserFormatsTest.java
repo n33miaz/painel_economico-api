@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -296,6 +297,26 @@ class CsvParserFormatsTest {
 
         assertThat(lidas).extracting(ParsedTransaction::getType)
                 .containsExactly("CREDIT", "DEBIT");
+    }
+
+    @Test
+    @DisplayName("Vale refeicao (Flash): a coluna se chama 'Movimentacao' e e a descricao")
+    void colunaMovimentacaoEhADescricao() {
+        // O cabecalho ja era ACEITO sem esta coluna — data e valor bastam — e o
+        // extrato entrava com descricao vazia: nada para categorizar e nada
+        // para reconhecer depois
+        List<ParsedTransaction> lidas = ler("""
+                Data,Hora,Movimentação,Valor,Meio de Pagamento,Saldo
+                29/08/2026,10:08,SUPERMERCADO SERO SEROPEDICA BRA,"-R$ 609,79",Cartão,"R$ 47,51"
+                28/08/2026,17:59,Depósito transferido,"R$ 735,00",Depósito,"R$ 735,00"
+                """);
+
+        assertThat(lidas).extracting(ParsedTransaction::getDescription)
+                .containsExactly("SUPERMERCADO SERO SEROPEDICA BRA", "Depósito transferido");
+        assertThat(lidas).extracting(ParsedTransaction::getType)
+                .containsExactly("DEBIT", "CREDIT");
+        // "-R$ 609,79" entre aspas: cifrao, espaco e virgula decimal juntos
+        assertThat(lidas.get(0).getAmount()).isEqualByComparingTo(new BigDecimal("-609.79"));
     }
 
     @Test

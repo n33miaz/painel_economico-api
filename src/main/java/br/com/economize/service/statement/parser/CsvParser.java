@@ -177,7 +177,13 @@ public class CsvParser implements StatementParserStrategy {
             } else if (historicoIdx < 0 && name.startsWith("historico")) {
                 historicoIdx = i;
             } else if (descricaoIdx < 0 && (name.startsWith("descricao") || name.equals("description")
-                    || name.equals("title") || name.startsWith("lancamento") || name.startsWith("estabelecimento"))) {
+                    || name.equals("title") || name.startsWith("lancamento") || name.startsWith("estabelecimento")
+                    // "Movimentacao" e como o Flash (vale refeicao) chama a
+                    // coluna. Sem ela, o cabecalho AINDA era aceito — data e
+                    // valor bastam — e as 15 linhas entravam com descricao
+                    // VAZIA: nada para categorizar, nada para reconhecer, um
+                    // extrato importado que nao diz o que foi comprado
+                    || name.startsWith("movimentacao"))) {
                 descricaoIdx = i;
             }
         }
