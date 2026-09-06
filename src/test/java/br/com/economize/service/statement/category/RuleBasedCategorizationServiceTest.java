@@ -24,6 +24,25 @@ class RuleBasedCategorizationServiceTest {
     }
 
     @Test
+    void reconheceOPrefixoDaMaquininhaDoIfood() {
+        // "IFD*" e como o iFood aparece no extrato de cartao e de vale-refeicao.
+        // Medido no extrato real do Flash: sem esta regra, QUATRO grupos de
+        // pedidos ficavam sem sugestao nenhuma, porque a palavra "ifood" so
+        // aparece em alguns deles
+        assertThat(keyOf("IFD*FOOD ACAI LTDA SEROPEDICA BRA")).isEqualTo("FOOD_DELIVERY");
+        assertThat(keyOf("IFD*REI DO ARTESANAL H SEROPEDICA BRA")).isEqualTo("FOOD_DELIVERY");
+        assertThat(keyOf("IFD *FOOD ACAI LTDA")).isEqualTo("FOOD_DELIVERY");
+        assertThat(keyOf("99Food *Esfihas Ariston p Sao Paulo BRA")).isEqualTo("FOOD_DELIVERY");
+    }
+
+    @Test
+    void oPrefixoCurtoNaoCasaDentroDeOutraPalavra() {
+        // "ifd" tem tres letras: solto, casaria dentro de qualquer nome. Por
+        // isso a regra e de palavra INTEIRA
+        assertThat(keyOf("SWIFDATA SOLUCOES LTDA")).isNotEqualTo("FOOD_DELIVERY");
+    }
+
+    @Test
     void mapsTransport() {
         assertThat(service.categorize("UBER TRIP", "DEBIT")).isEqualTo(TransactionCategory.TRANSPORT);
         assertThat(service.categorize("POSTO IPIRANGA", "DEBIT")).isEqualTo(TransactionCategory.TRANSPORT);

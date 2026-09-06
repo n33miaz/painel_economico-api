@@ -71,6 +71,15 @@ public class RuleBasedCategorizationService {
             // Alimentação
             new Rule("FOOD_DELIVERY", "FOOD", BRAND, false,
                     List.of("ifood", "rappi", "uber eats", "delivery", "james delivery")),
+            // "IFD*" é como o iFood aparece na maquininha, e é o que chega no
+            // extrato de cartão e de vale-refeição: "IFD*FOOD ACAI LTDA",
+            // "IFD*REI DO ARTESANAL H". Medido no extrato real do Flash — sem
+            // isto, QUATRO grupos de pedidos ficavam sem sugestão nenhuma,
+            // porque a palavra "ifood" só aparece em alguns deles.
+            // Palavra inteira de propósito: "ifd" tem três letras e, solto,
+            // casaria dentro de qualquer nome de estabelecimento.
+            new Rule("FOOD_DELIVERY", "FOOD", BRAND, true,
+                    List.of("ifd", "99food", "99 food", "aiqfome", "zedelivery")),
             new Rule("FOOD_GROCERIES", "FOOD", List.of("supermercado", "mercadinho", "minimercado", "mercearia", "adega", "hortifruti", "sacolao", "sacolão", "atacadao", "atacadão", "assai", "assaí", "carrefour", "roldao", "roldão", "pao de acucar", "pão de açúcar", "big bompreco", "extra super")),
             new Rule("FOOD_COFFEE", "FOOD", List.of("padaria", "cafeteria", "starbucks", "confeitaria", "doceria")),
             // "restaurant"/"lanch" como prefixo cobrem restaurante(s), lanche(s) e
