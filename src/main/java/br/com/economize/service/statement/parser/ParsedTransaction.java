@@ -7,7 +7,10 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Value
-@Builder
+// toBuilder porque a linha e IMUTAVEL e mesmo assim precisa ganhar a origem
+// depois de lida: quem sabe de qual conta o arquivo veio e o upload, nao o
+// parser. Copiar com a origem preenchida mantem a imutabilidade de pe.
+@Builder(toBuilder = true)
 public class ParsedTransaction {
     String externalId;
     String type; // CREDIT, DEBIT
@@ -22,10 +25,11 @@ public class ParsedTransaction {
     // nenhum builder já escrito.
     boolean internalTransfer;
 
-    // Origem do lançamento (EC-113): id da ConnectorAccount que o conector já
-    // resolveu antes de puxar as transações. Como internalTransfer, só os
-    // conectores sabem disso — os parsers de arquivo deixam nulo, porque o
-    // upload manual não tem conta de provedor, e por isso o campo não é
-    // obrigatório em nenhum builder já escrito.
+    // Origem do lançamento (EC-113): id da ConnectorAccount de onde ele veio.
+    // Os PARSERS nunca sabem disso — o arquivo não diz a qual conta do usuário
+    // pertence —, então eles deixam nulo e o campo não é obrigatório em builder
+    // nenhum. Quem preenche é quem tem a informação: o conector, que resolveu a
+    // conta antes de puxar as transações, ou o upload, quando o usuário diz a
+    // qual conta o arquivo pertence (?accountId=).
     java.util.UUID accountId;
 }

@@ -1,6 +1,8 @@
 package br.com.economize.service;
 
+import br.com.economize.exception.ResourceNotFoundException;
 import br.com.economize.model.BankTransaction;
+import br.com.economize.model.ConnectorAccount;
 import br.com.economize.model.StatementUpload;
 import br.com.economize.model.User;
 import br.com.economize.repository.BankTransactionRepository;
@@ -30,9 +32,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -69,6 +73,11 @@ class BankStatementAccountOriginTest {
     @Mock
     private StatementParserFactory parserFactory;
 
+    // Só os dois testes de upload com origem passam pelo parser; os demais
+    // entram pelo caminho do conector, que já recebe as linhas prontas
+    @Mock
+    private br.com.economize.service.statement.parser.StatementParserStrategy parser;
+
     @Mock
     private CategorizationEngine categorizationEngine;
 
@@ -77,6 +86,10 @@ class BankStatementAccountOriginTest {
 
     @Mock
     private StatementImportWriter importWriter;
+
+    // So entra em cena quando o upload declara a origem (?accountId=)
+    @Mock
+    private ConnectorAccountService accountService;
 
     @Mock
     private DomainEventPublisher eventPublisher;
@@ -95,7 +108,7 @@ class BankStatementAccountOriginTest {
         ObjectProvider<AiCategorySuggester> aiSuggester = mock(ObjectProvider.class);
         service = new BankStatementService(bankTransactionRepository, statementUploadRepository,
                 userRepository, parserFactory, categorizationEngine, categoryRepository,
-                importWriter, eventPublisher, aiSuggester);
+                importWriter, accountService, eventPublisher, aiSuggester);
 
         lenient().when(categorizationEngine.contextFor(user.getId())).thenReturn(context);
         lenient().when(context.getDirtyRules()).thenReturn(new HashSet<>());
@@ -108,6 +121,46 @@ class BankStatementAccountOriginTest {
                     upload.setId(UUID.randomUUID());
                     return upload;
                 });
+    }
+
+    @Test
+    @DisplayName("upload que declara a conta carimba a origem em TODAS as linhas do arquivo")
+    void uploadWithAccountStampsEveryLine() {
+        emptyWindow();
+        UUID conta = UUID.randomUUID();
+        ConnectorAccount origem = ConnectorAccount.builder().id(conta).user(user).build();
+        when(accountService.requireOwned(conta, user.getId())).thenReturn(origem);
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        when(parserFactory.resolve(StatementFormat.OFX)).thenReturn(parser);
+        when(parser.parse(any())).thenReturn(List.of(
+                ParsedTransaction.builder()
+                        .externalId("OFX-1").type("DEBIT").amount(new BigDecimal("-42.00"))
+                        .description("PADARIA REAL").date(day(2026, 8, 10)).build(),
+                ParsedTransaction.builder()
+                        .externalId("OFX-2").type("CREDIT").amount(new BigDecimal("2500.00"))
+                        .description("SALARIO").date(day(2026, 8, 5)).build()));
+
+        service.processFile(user.getEmail(), filePart("extrato.ofx"), conta).block();
+
+        // Sem isto, duas contas correntes e um cartão importados por arquivo
+        // viravam uma lista indistinta: o Extrato não tinha como separá-las
+        assertThat(saved()).extracting(BankTransaction::getAccountId).containsOnly(conta);
+    }
+
+    @Test
+    @DisplayName("conta de OUTRA pessoa recusa antes de importar qualquer linha")
+    void uploadWithForeignAccountImportsNothing() {
+        UUID alheia = UUID.randomUUID();
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        when(accountService.requireOwned(alheia, user.getId()))
+                .thenThrow(new ResourceNotFoundException("Conta não encontrada"));
+
+        assertThatThrownBy(() -> service.processFile(user.getEmail(), filePart("extrato.ofx"), alheia).block())
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        // a recusa vem ANTES da leitura: meio extrato gravado sem dono seria
+        // pior do que não importar nada
+        verify(importWriter, never()).write(any(), anyList(), anyCollection());
     }
 
     @Test
@@ -269,5 +322,19 @@ class BankStatementAccountOriginTest {
 
     private static OffsetDateTime day(int year, int month, int day) {
         return OffsetDateTime.of(LocalDate.of(year, month, day), LocalTime.NOON, ZoneOffset.UTC);
+    }
+
+    /**
+     * Um {@code FilePart} de mentira. O conteúdo é irrelevante — quem decide o
+     * que sai da leitura é o parser, que aqui está dublado —, mas os bytes
+     * precisam existir para o hash de idempotência ser calculado.
+     */
+    private org.springframework.http.codec.multipart.FilePart filePart(String nome) {
+        var part = mock(org.springframework.http.codec.multipart.FilePart.class);
+        when(part.filename()).thenReturn(nome);
+        when(part.content()).thenReturn(reactor.core.publisher.Flux.just(
+                new org.springframework.core.io.buffer.DefaultDataBufferFactory()
+                        .wrap("conteudo".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        return part;
     }
 }

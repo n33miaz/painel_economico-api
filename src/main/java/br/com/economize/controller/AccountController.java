@@ -1,17 +1,23 @@
 package br.com.economize.controller;
 
 import br.com.economize.dto.account.AccountResponse;
+import br.com.economize.dto.account.CreateAccountRequest;
 import br.com.economize.dto.account.CardInvoicesResponse;
 import br.com.economize.service.CardInvoiceService;
 import br.com.economize.service.ConnectorAccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -40,6 +46,22 @@ public class AccountController {
     @GetMapping
     public Mono<List<AccountResponse>> list(@AuthenticationPrincipal String email) {
         return Mono.fromCallable(() -> accountService.list(email))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Criar uma conta ou cartão à mão",
+            description = "Para quem importa extrato em arquivo: cria a origem que o upload vai carimbar "
+                    + "(POST /bank-statements/upload?accountId=...). Nasce desvinculada (`linked=false`), "
+                    + "porque nada sincroniza nela sozinho. Se depois a mesma instituição for conectada pelo "
+                    + "widget do Pluggy, a conexão REAPROVEITA esta origem em vez de duplicá-la.")
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Mono<AccountResponse> create(
+            @AuthenticationPrincipal String email,
+            @Valid @RequestBody CreateAccountRequest request) {
+        return Mono.fromCallable(() -> AccountResponse.from(accountService.createManual(
+                        email, request.name(), request.institution(), request.type(),
+                        request.statementClosingDay(), request.statementDueDay())))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 

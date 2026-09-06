@@ -78,6 +78,10 @@ class BankStatementImportPathsTest {
     private CategoryRepository categoryRepository;
     @Mock
     private StatementImportWriter importWriter;
+
+    // So entra em cena quando o upload declara a origem (?accountId=)
+    @Mock
+    private ConnectorAccountService accountService;
     @Mock
     private DomainEventPublisher eventPublisher;
     @Mock
@@ -95,7 +99,7 @@ class BankStatementImportPathsTest {
         ObjectProvider<AiCategorySuggester> aiSuggester = mock(ObjectProvider.class);
         service = new BankStatementService(bankTransactionRepository, statementUploadRepository,
                 userRepository, parserFactory, categorizationEngine, categoryRepository,
-                importWriter, eventPublisher, aiSuggester);
+                importWriter, accountService, eventPublisher, aiSuggester);
 
         lenient().when(categorizationEngine.contextFor(user.getId())).thenReturn(context);
         lenient().when(context.getDirtyRules()).thenReturn(new HashSet<>());

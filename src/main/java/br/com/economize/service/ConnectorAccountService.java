@@ -137,6 +137,36 @@ public class ConnectorAccountService {
         return accountRepository.save(account);
     }
 
+    /**
+     * Origem criada à mão por quem importa extrato em arquivo.
+     *
+     * <p>Nasce sempre DESVINCULADA ({@code pluggyItemId} nulo), que é a
+     * verdade: nada vai sincronizar nela sozinho. O {@code providerAccountId}
+     * ganha um id interno prefixado — a coluna é obrigatória e é a chave
+     * natural da tabela, e o prefixo garante que ele jamais colida com um id do
+     * Pluggy nem seja confundido com um.
+     *
+     * <p>Consequência boa e deliberada: uma conta criada aqui é candidata a
+     * REVÍNCULO ({@code adoptable}) se depois a mesma instituição for conectada
+     * pelo widget — o histórico importado à mão e o sincronizado passam a viver
+     * na mesma origem, em vez de virarem duas linhas iguais na tela.
+     */
+    public ConnectorAccount createManual(String email, String name, String institution,
+                                         ConnectorAccount.AccountType type,
+                                         Integer statementClosingDay, Integer statementDueDay) {
+        User user = requireUser(email);
+        return accountRepository.save(ConnectorAccount.builder()
+                .user(user)
+                .providerAccountId("manual:" + UUID.randomUUID())
+                .name(truncate(name.trim(), NAME_MAX))
+                .institution(institution == null || institution.isBlank()
+                        ? null : truncate(institution.trim(), INSTITUTION_MAX))
+                .type(type)
+                .statementClosingDay(validDay(statementClosingDay))
+                .statementDueDay(validDay(statementDueDay))
+                .build());
+    }
+
     private ConnectorAccount insert(User user, AccountSnapshot snapshot) {
         try {
             // saveAndFlush: duas sincronizações simultâneas do mesmo usuário

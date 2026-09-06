@@ -80,6 +80,8 @@ public class BankStatementService {
     private final CategorizationEngine categorizationEngine;
     private final CategoryRepository categoryRepository;
     private final StatementImportWriter importWriter;
+    // Resolve a origem opcional do upload — e recusa conta de outra pessoa
+    private final ConnectorAccountService accountService;
     private final DomainEventPublisher eventPublisher;
     // ObjectProvider e não injeção direta: desde o EC-107 o bean existe sempre
     // (a decisão de usar IA passou a ser POR USUÁRIO, não mais por ambiente),
@@ -88,6 +90,22 @@ public class BankStatementService {
     private final ObjectProvider<AiCategorySuggester> aiSuggester;
 
     public Mono<ImportResult> processFile(String email, FilePart filePart) {
+        return processFile(email, filePart, null);
+    }
+
+    /**
+     * Upload de arquivo, opcionalmente carimbando a ORIGEM de todas as linhas.
+     *
+     * <p>Sem {@code accountId} o comportamento é o de sempre (origem nula), que
+     * e o que o APK publicado espera. Com ele, cada lancamento do arquivo passa
+     * a saber de qual conta veio — e o Extrato consegue separar duas contas
+     * correntes e um cartao, em vez de amontoar tudo numa lista so.
+     *
+     * <p>A conta e resolvida ANTES de ler o arquivo: id de outra pessoa responde
+     * 404 sem que nada seja importado, e nao depois de meio extrato ja estar
+     * gravado sem dono.
+     */
+    public Mono<ImportResult> processFile(String email, FilePart filePart, UUID accountId) {
         return Mono.fromCallable(() -> userRepository.findByEmail(email)
                         .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado")))
                 .subscribeOn(Schedulers.boundedElastic())
@@ -98,16 +116,20 @@ public class BankStatementService {
                             DataBufferUtils.release(buffer);
                             return bytes;
                         })
-                        .flatMap(bytes -> processBytes(user, filePart.filename(), bytes)));
+                        .flatMap(bytes -> processBytes(user, filePart.filename(), bytes, accountId)));
     }
 
-    private Mono<ImportResult> processBytes(User user, String fileName, byte[] bytes) {
+    private Mono<ImportResult> processBytes(User user, String fileName, byte[] bytes, UUID accountId) {
         return Mono.fromCallable(() -> {
             StatementFormat format = StatementFormat.fromFilename(fileName);
+            // dono como FILTRO: conta alheia responde 404 igual a inexistente
+            UUID origem = accountId == null
+                    ? null
+                    : accountService.requireOwned(accountId, user.getId()).getId();
             String hash = sha256(bytes);
             return statementUploadRepository.findByUserIdAndFileHash(user.getId(), hash)
                     .map(existing -> duplicatedResult(user, existing, format))
-                    .orElseGet(() -> importFresh(user, fileName, bytes, format, hash));
+                    .orElseGet(() -> importFresh(user, fileName, bytes, format, hash, origem));
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -126,11 +148,21 @@ public class BankStatementService {
                 suggested, uncategorized, 0, true, format.name());
     }
 
-    private ImportResult importFresh(User user, String fileName, byte[] bytes, StatementFormat format, String hash) {
+    private ImportResult importFresh(User user, String fileName, byte[] bytes, StatementFormat format,
+                                     String hash, UUID accountId) {
         StatementParserStrategy parser = parserFactory.resolve(format);
         List<ParsedTransaction> parsed = parser.parse(new ByteArrayInputStream(bytes));
         if (parsed.isEmpty()) {
             throw new IllegalArgumentException("Nenhuma transação encontrada no arquivo");
+        }
+        if (accountId != null) {
+            // a origem viaja com a linha ate a gravacao, do mesmo jeito que no
+            // sync do conector (EC-113): depois dela ninguem mais saberia dizer
+            // de qual conta a transacao veio. A linha e imutavel, entao a
+            // origem entra numa COPIA — ver o toBuilder em ParsedTransaction
+            parsed = parsed.stream()
+                    .map(tx -> tx.toBuilder().accountId(accountId).build())
+                    .toList();
         }
         return persist(user, parsed, fileName, format, hash);
     }

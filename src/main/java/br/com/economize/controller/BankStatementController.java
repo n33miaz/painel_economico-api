@@ -16,6 +16,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/bank-statements")
@@ -26,11 +27,16 @@ public class BankStatementController {
     private final BankStatementService bankStatementService;
 
     @Operation(summary = "Upload de extrato bancário",
-            description = "Aceita OFX, CSV, XLSX, PDF e TXT. Idempotente por hash SHA-256.")
+            description = "Aceita OFX, CSV, XLSX, PDF e TXT. Idempotente por hash SHA-256. "
+                    + "Com `accountId` (de GET /accounts), TODAS as linhas do arquivo passam a saber de qual "
+                    + "conta vieram — é o que permite ao Extrato separar duas contas correntes e um cartão em "
+                    + "vez de amontoar tudo. Sem ele, o comportamento é o de sempre: origem não informada. "
+                    + "Conta de outro usuário responde 404 sem importar nada.")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> upload(
             @AuthenticationPrincipal String email,
-            @RequestPart("file") Mono<FilePart> filePartMono) {
+            @RequestPart("file") Mono<FilePart> filePartMono,
+            @RequestParam(required = false) UUID accountId) {
 
         return filePartMono
                 .flatMap(filePart -> {
@@ -39,7 +45,7 @@ public class BankStatementController {
                     } catch (IllegalArgumentException ex) {
                         return Mono.error(ex);
                     }
-                    return bankStatementService.processFile(email, filePart);
+                    return bankStatementService.processFile(email, filePart, accountId);
                 })
                 .map(result -> ResponseEntity.ok(Map.of(
                         "message", result.duplicated()

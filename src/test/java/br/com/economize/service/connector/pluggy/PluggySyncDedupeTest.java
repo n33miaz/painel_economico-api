@@ -124,7 +124,8 @@ class PluggySyncDedupeTest {
         ObjectProvider<AiCategorySuggester> aiSuggester = mock(ObjectProvider.class);
         BankStatementService bankStatementService = new BankStatementService(
                 bankTransactionRepository, statementUploadRepository, userRepository, parserFactory,
-                categorizationEngine, categoryRepository, importWriter, eventPublisher, aiSuggester);
+                categorizationEngine, categoryRepository, importWriter, accountService, eventPublisher,
+                aiSuggester);
         service = new PluggySyncService(pluggyClient, userRepository, pluggyItemRepository,
                 pluggyItemService, bankStatementService, accountService);
 
