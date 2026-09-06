@@ -8,6 +8,7 @@ import br.com.economize.model.MfaRecoveryCode;
 import br.com.economize.model.User;
 import br.com.economize.model.UserMfa;
 import br.com.economize.repository.MfaRecoveryCodeRepository;
+import br.com.economize.repository.TrustedDeviceRepository;
 import br.com.economize.repository.UserMfaRepository;
 import br.com.economize.repository.UserRepository;
 import br.com.economize.security.MfaSecretCipher;
@@ -61,6 +62,7 @@ public class MfaService {
     private final UserMfaRepository mfaRepository;
     private final MfaRecoveryCodeRepository recoveryCodeRepository;
     private final MfaSecretCipher cipher;
+    private final TrustedDeviceRepository deviceRepository;
     private final PasswordEncoder passwordEncoder;
     private final SecureRandom random = new SecureRandom();
 
@@ -79,21 +81,24 @@ public class MfaService {
                       UserMfaRepository mfaRepository,
                       MfaRecoveryCodeRepository recoveryCodeRepository,
                       MfaSecretCipher cipher,
+                      TrustedDeviceRepository deviceRepository,
                       PasswordEncoder passwordEncoder) {
-        this(userRepository, mfaRepository, recoveryCodeRepository, cipher, passwordEncoder,
-                Clock.systemUTC());
+        this(userRepository, mfaRepository, recoveryCodeRepository, cipher, deviceRepository,
+                passwordEncoder, Clock.systemUTC());
     }
 
     MfaService(UserRepository userRepository,
                UserMfaRepository mfaRepository,
                MfaRecoveryCodeRepository recoveryCodeRepository,
                MfaSecretCipher cipher,
+               TrustedDeviceRepository deviceRepository,
                PasswordEncoder passwordEncoder,
                Clock clock) {
         this.userRepository = userRepository;
         this.mfaRepository = mfaRepository;
         this.recoveryCodeRepository = recoveryCodeRepository;
         this.cipher = cipher;
+        this.deviceRepository = deviceRepository;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
     }
@@ -218,6 +223,9 @@ public class MfaService {
         }
         recoveryCodeRepository.deleteAllByUserId(user.getId());
         mfaRepository.deleteByUserId(user.getId());
+        // Os aparelhos conhecidos só existiam para dispensar ESTE fator: sem
+        // ele, guardá-los é manter um segredo que não abre mais nada
+        deviceRepository.deleteAllByUserId(user.getId());
         log.info("Segundo fator desligado para user={}", email);
     }
 

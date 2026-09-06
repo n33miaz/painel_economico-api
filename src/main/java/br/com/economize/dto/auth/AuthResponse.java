@@ -26,12 +26,18 @@ public class AuthResponse {
     private Boolean mfaRequired;
     private String mfaToken;
 
+    /**
+     * Segredo do aparelho recem-lembrado. So aparece quando o segundo passo
+     * pediu para lembrar, e e a UNICA vez que ele existe fora do aparelho.
+     */
+    private String deviceToken;
+
     public AuthResponse(String token, String name) {
-        this(token, name, null, null);
+        this(token, name, null, null, null);
     }
 
     /** Primeiro passo concluído, segundo pendente. */
     public static AuthResponse challenge(String mfaToken) {
-        return new AuthResponse(null, null, true, mfaToken);
+        return new AuthResponse(null, null, true, mfaToken, null);
     }
 }

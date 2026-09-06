@@ -44,7 +44,10 @@ class RateLimitFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new RateLimitFilter(corsSource());
+        // Os mesmos tetos do padrao de producao: esta suite existe para
+        // travar o COMPORTAMENTO do filtro, e ele precisa ser medido nos
+        // numeros que valem no ar
+        filter = new RateLimitFilter(corsSource(), 60, 10);
         chainCalls = new AtomicInteger();
         chain = exchange -> {
             chainCalls.incrementAndGet();

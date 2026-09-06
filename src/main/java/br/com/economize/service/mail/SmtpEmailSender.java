@@ -40,4 +40,21 @@ public class SmtpEmailSender implements EmailSender {
         mailSender.send(message);
         log.info("E-mail de recuperação de senha enviado para {}", to);
     }
+
+    @Override
+    public void sendSecurityAlert(String to, String alert) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(from);
+        message.setTo(to);
+        message.setSubject("Economize! — Aviso de segurança");
+        message.setText("""
+                Olá,
+
+                %s
+
+                Este é um aviso automático. Nada foi bloqueado.
+                """.formatted(alert));
+        mailSender.send(message);
+        log.info("Aviso de segurança enviado para {}", to);
+    }
 }

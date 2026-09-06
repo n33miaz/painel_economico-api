@@ -5,6 +5,7 @@ import br.com.economize.dto.auth.MfaSetupResponse;
 import br.com.economize.dto.auth.MfaStatusResponse;
 import br.com.economize.model.User;
 import br.com.economize.repository.MfaRecoveryCodeRepository;
+import br.com.economize.repository.TrustedDeviceRepository;
 import br.com.economize.repository.UserMfaRepository;
 import br.com.economize.repository.UserRepository;
 import br.com.economize.security.MfaSecretCipher;
@@ -54,6 +55,10 @@ class MfaServiceTest {
     @Autowired
     private MfaRecoveryCodeRepository recoveryCodeRepository;
 
+    // Desligar o fator leva junto os aparelhos que só existiam para dispensá-lo
+    @Autowired
+    private TrustedDeviceRepository deviceRepository;
+
     private MfaService service;
     private PasswordEncoder encoder;
     private RelogioDeTeste relogio;
@@ -66,7 +71,7 @@ class MfaServiceTest {
         encoder = new BCryptPasswordEncoder(4);
         relogio = new RelogioDeTeste(Instant.ofEpochSecond(1_700_000_000L));
         service = new MfaService(userRepository, mfaRepository, recoveryCodeRepository,
-                new MfaSecretCipher(JWT_SECRET), encoder, relogio);
+                new MfaSecretCipher(JWT_SECRET), deviceRepository, encoder, relogio);
         ana = userRepository.save(User.builder()
                 .name("Ana")
                 .email("ana@example.com")
@@ -204,7 +209,7 @@ class MfaServiceTest {
 
         // é o cenário do JWT_SECRET trocado: o TOTP morreu, o papel não
         MfaService depoisDaRotacao = new MfaService(userRepository, mfaRepository, recoveryCodeRepository,
-                new MfaSecretCipher(JWT_SECRET + "-outro"), encoder);
+                new MfaSecretCipher(JWT_SECRET + "-outro"), deviceRepository, encoder);
 
         assertThat(depoisDaRotacao.verify(ana, codeFor(secret))).isFalse();
         assertThat(depoisDaRotacao.verify(ana, codes.get(0))).isTrue();

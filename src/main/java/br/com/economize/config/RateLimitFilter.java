@@ -3,6 +3,7 @@ package br.com.economize.config;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -75,8 +76,23 @@ public class RateLimitFilter implements WebFilter {
 
     private final CorsConfigurationSource corsConfigurationSource;
 
-    public RateLimitFilter(CorsConfigurationSource corsConfigurationSource) {
+    /**
+     * Os tetos por minuto, configuraveis.
+     *
+     * <p>Sao properties e nao constantes por dois motivos concretos: o operador
+     * afina o limite sem esperar um deploy, e a suite de teste — que dispara
+     * dezenas de logins do MESMO cliente em segundos — nao precisa de um truque
+     * para nao esbarrar no balde. Os padroes sao os valores que valiam antes.
+     */
+    private final long standardCapacity;
+    private final long expensiveCapacity;
+
+    public RateLimitFilter(CorsConfigurationSource corsConfigurationSource,
+                           @Value("${economize.rate-limit.standard-per-minute:60}") long standardCapacity,
+                           @Value("${economize.rate-limit.expensive-per-minute:10}") long expensiveCapacity) {
         this.corsConfigurationSource = corsConfigurationSource;
+        this.standardCapacity = standardCapacity;
+        this.expensiveCapacity = expensiveCapacity;
     }
 
     @Override
@@ -91,8 +107,8 @@ public class RateLimitFilter implements WebFilter {
         boolean expensive = EXPENSIVE_PREFIXES.stream().anyMatch(path::startsWith);
 
         Bucket bucket = expensive
-                ? expensiveBuckets.computeIfAbsent(key, k -> createBucket(10, Duration.ofMinutes(1)))
-                : standardBuckets.computeIfAbsent(key, k -> createBucket(60, Duration.ofMinutes(1)));
+                ? expensiveBuckets.computeIfAbsent(key, k -> createBucket(expensiveCapacity, Duration.ofMinutes(1)))
+                : standardBuckets.computeIfAbsent(key, k -> createBucket(standardCapacity, Duration.ofMinutes(1)));
 
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
         if (probe.isConsumed()) {

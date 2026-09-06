@@ -8,6 +8,7 @@ import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
 import br.com.economize.service.MfaService;
+import br.com.economize.service.TrustedDeviceService;
 import br.com.economize.service.PasswordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -58,6 +59,10 @@ class AuthMfaLoginTest {
 
     @MockitoBean
     private MfaService mfaService;
+
+    // Aparelho conhecido dispensa o codigo; por padrao o mock diz "desconhecido"
+    @MockitoBean
+    private TrustedDeviceService deviceService;
 
     private User ana;
 
@@ -183,6 +188,77 @@ class AuthMfaLoginTest {
                 .bodyValue(new MfaChallengeRequest(tampered, "123456"))
                 .exchange()
                 .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    @DisplayName("aparelho já conhecido entra SEM pedir código")
+    void aTrustedDeviceSkipsTheChallenge() {
+        when(mfaService.isEnabledFor(ana)).thenReturn(true);
+        when(deviceService.isTrusted(any(User.class), any())).thenReturn(true);
+
+        webTestClient.post().uri("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("email", "ana@example.com", "password", "senha-da-ana",
+                        "deviceToken", "segredo-deste-aparelho"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                // É isto que faz o fator conviver com o celular de todo dia:
+                // sem ele, o código seria pedido dez vezes por dia e o dono
+                // acabaria desligando a proteção inteira
+                .jsonPath("$.token").isNotEmpty()
+                .jsonPath("$.mfaRequired").doesNotExist();
+    }
+
+    @Test
+    @DisplayName("aparelho desconhecido continua pedindo código")
+    void anUnknownDeviceStillGetsTheChallenge() {
+        when(mfaService.isEnabledFor(ana)).thenReturn(true);
+        when(deviceService.isTrusted(any(User.class), any())).thenReturn(false);
+
+        webTestClient.post().uri("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("email", "ana@example.com", "password", "senha-da-ana",
+                        "deviceToken", "segredo-que-nao-vale"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.mfaRequired").isEqualTo(true)
+                .jsonPath("$.token").doesNotExist();
+    }
+
+    @Test
+    @DisplayName("o segundo passo lembra o aparelho e devolve o segredo UMA vez")
+    void theSecondStepRemembersTheDevice() {
+        when(mfaService.verify(any(User.class), anyString())).thenReturn(true);
+        when(deviceService.remember(any(User.class), anyString(), any()))
+                .thenReturn("segredo-novo-do-aparelho");
+        String challenge = jwtUtil.generateMfaChallenge("ana@example.com");
+
+        webTestClient.post().uri("/api/v1/auth/login/mfa")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new MfaChallengeRequest(challenge, "123456", true, "iPhone da Ana"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.deviceToken").isEqualTo("segredo-novo-do-aparelho");
+    }
+
+    @Test
+    @DisplayName("sem pedir para lembrar, nenhum aparelho é registrado")
+    void withoutRememberNoDeviceIsStored() {
+        when(mfaService.verify(any(User.class), anyString())).thenReturn(true);
+        String challenge = jwtUtil.generateMfaChallenge("ana@example.com");
+
+        webTestClient.post().uri("/api/v1/auth/login/mfa")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new MfaChallengeRequest(challenge, "123456", false, "Computador emprestado"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.deviceToken").doesNotExist();
+
+        verify(deviceService, never()).remember(any(User.class), anyString(), any());
     }
 
     @Test

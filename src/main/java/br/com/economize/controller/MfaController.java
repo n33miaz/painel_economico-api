@@ -5,7 +5,9 @@ import br.com.economize.dto.auth.MfaDisableRequest;
 import br.com.economize.dto.auth.MfaRecoveryCodesResponse;
 import br.com.economize.dto.auth.MfaSetupResponse;
 import br.com.economize.dto.auth.MfaStatusResponse;
+import br.com.economize.dto.auth.TrustedDeviceResponse;
 import br.com.economize.service.MfaService;
+import br.com.economize.service.TrustedDeviceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,6 +33,7 @@ import reactor.core.scheduler.Schedulers;
 public class MfaController {
 
     private final MfaService mfaService;
+    private final TrustedDeviceService deviceService;
 
     @Operation(summary = "Estado do segundo fator desta conta",
             description = "Nunca devolve o segredo. `pendingConfirmation` marca cadastro começado e não "
@@ -67,6 +70,36 @@ public class MfaController {
     public Mono<MfaRecoveryCodesResponse> rotateRecoveryCodes(@AuthenticationPrincipal String email) {
         return Mono.fromCallable(() -> mfaService.rotateRecoveryCodes(email))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Aparelhos que dispensam o segundo fator",
+            description = "A lista dos que já provaram quem são. Nunca devolve o segredo — só o rótulo e as "
+                    + "datas, para a pessoa reconhecer o que está ali e esquecer o que não reconhece.")
+    @GetMapping("/devices")
+    public Mono<java.util.List<TrustedDeviceResponse>> devices(@AuthenticationPrincipal String email) {
+        return Mono.fromCallable(() -> deviceService.list(email))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Esquecer um aparelho",
+            description = "O próximo login dele volta a pedir código. Aparelho de outro usuário responde 404.")
+    @DeleteMapping("/devices/{deviceId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> forgetDevice(@AuthenticationPrincipal String email,
+                                   @PathVariable java.util.UUID deviceId) {
+        return Mono.<Void>fromRunnable(() -> deviceService.forget(email, deviceId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .then();
+    }
+
+    @Operation(summary = "Esquecer TODOS os aparelhos",
+            description = "O botão de \"perdi o celular\": todo login volta a pedir código.")
+    @DeleteMapping("/devices")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> forgetAllDevices(@AuthenticationPrincipal String email) {
+        return Mono.<Void>fromRunnable(() -> deviceService.forgetAll(email))
+                .subscribeOn(Schedulers.boundedElastic())
+                .then();
     }
 
     @Operation(summary = "Desligar o segundo fator",

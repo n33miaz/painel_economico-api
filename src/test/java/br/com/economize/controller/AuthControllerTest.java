@@ -8,6 +8,7 @@ import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
 import br.com.economize.service.MfaService;
+import br.com.economize.service.TrustedDeviceService;
 import br.com.economize.service.PasswordService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,10 @@ class AuthControllerTest {
     // nem sobe. O login em dois passos tem suite propria: AuthMfaLoginTest
     @MockitoBean
     private MfaService mfaService;
+
+    // O login consulta os aparelhos conhecidos antes de exigir o segundo passo
+    @MockitoBean
+    private TrustedDeviceService deviceService;
 
     @Test
     @DisplayName("POST /forgot-password - Deve responder 202 com mensagem neutra")
