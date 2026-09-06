@@ -60,6 +60,21 @@ public class BankStatementController {
                         "duplicated", result.duplicated())));
     }
 
+    @Operation(summary = "Atribuir a conta de origem a uma importação já feita",
+            description = "Para o extrato enviado ANTES de a conta existir: carimba a origem em todas as "
+                    + "linhas daquele arquivo que ainda não tenham uma. Reimportar não resolveria — o upload "
+                    + "é idempotente por hash. Linha que já tem origem fica como está. Importação ou conta de "
+                    + "outro usuário respondem 404.")
+    @PatchMapping("/uploads/{uploadId}/account")
+    public Mono<Map<String, Object>> assignAccount(
+            @AuthenticationPrincipal String email,
+            @PathVariable UUID uploadId,
+            @RequestParam UUID accountId) {
+        return Mono.fromCallable(() -> Map.<String, Object>of(
+                        "updated", bankStatementService.assignUploadAccount(email, uploadId, accountId)))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     @Operation(summary = "Listar transações bancárias",
             description = "Histórico inteiro do usuário, do mais recente para o mais antigo. É a "
                     + "fonte da aba Extrato; para recorte por janela/status/categoria use /transactions.")

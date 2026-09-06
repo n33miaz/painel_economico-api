@@ -45,6 +45,23 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
                       @Param("accountId") UUID accountId,
                       @Param("ids") Collection<UUID> ids);
 
+    /**
+     * Carimba a origem em TODAS as linhas de um upload que ainda não a tenham.
+     *
+     * <p>Existe para o histórico importado ANTES de a conta ser criada: sem
+     * isto, a única saída seria apagar os lançamentos e reimportar o arquivo —
+     * e a reimportação é idempotente por hash, então nem isso funcionaria.
+     * Continua valendo a regra do carimbo por id: decisão de origem já tomada
+     * nunca é sobrescrita.
+     */
+    @Modifying
+    @Transactional
+    @Query("update BankTransaction t set t.accountId = :accountId "
+            + "where t.user.id = :userId and t.uploadId = :uploadId and t.accountId is null")
+    int assignAccountToUpload(@Param("userId") UUID userId,
+                              @Param("accountId") UUID accountId,
+                              @Param("uploadId") UUID uploadId);
+
     List<BankTransaction> findAllByUserIdAndReviewStatusInOrderByDateDesc(
             UUID userId, Collection<BankTransaction.ReviewStatus> statuses);
 

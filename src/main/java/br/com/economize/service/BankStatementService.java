@@ -1,5 +1,6 @@
 package br.com.economize.service;
 
+import br.com.economize.exception.ResourceNotFoundException;
 import br.com.economize.model.BankTransaction;
 import br.com.economize.model.Category;
 import br.com.economize.model.StatementUpload;
@@ -24,6 +25,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -117,6 +119,31 @@ public class BankStatementService {
                             return bytes;
                         })
                         .flatMap(bytes -> processBytes(user, filePart.filename(), bytes, accountId)));
+    }
+
+    /**
+     * Atribui uma origem a um upload JÁ importado.
+     *
+     * <p>O caso concreto: o extrato foi enviado antes de a conta existir, e as
+     * linhas ficaram sem dono. Reimportar não resolve — o arquivo é idempotente
+     * por hash e a segunda tentativa não grava nada. As linhas que já têm
+     * origem continuam intocadas, pela mesma regra do carimbo do conector:
+     * decisão tomada não se sobrescreve.
+     *
+     * @return quantas linhas passaram a ter origem
+     */
+    @Transactional
+    public int assignUploadAccount(String email, UUID uploadId, UUID accountId) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado"));
+        // dono como FILTRO nos dois lados: upload e conta de outra pessoa
+        // respondem igual a inexistentes
+        statementUploadRepository.findByIdAndUserId(uploadId, user.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Importação não encontrada"));
+        UUID origem = accountService.requireOwned(accountId, user.getId()).getId();
+        int carimbadas = bankTransactionRepository.assignAccountToUpload(user.getId(), origem, uploadId);
+        log.info("Origem atribuída a {} lançamento(s) da importação {}", carimbadas, uploadId);
+        return carimbadas;
     }
 
     private Mono<ImportResult> processBytes(User user, String fileName, byte[] bytes, UUID accountId) {

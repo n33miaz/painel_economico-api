@@ -164,6 +164,38 @@ class BankStatementAccountOriginTest {
     }
 
     @Test
+    @DisplayName("importação antiga ganha origem sem precisar reimportar o arquivo")
+    void assignsTheOriginToAnAlreadyImportedFile() {
+        UUID upload = UUID.randomUUID();
+        UUID conta = UUID.randomUUID();
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        when(statementUploadRepository.findByIdAndUserId(upload, user.getId()))
+                .thenReturn(Optional.of(StatementUpload.builder().id(upload).build()));
+        when(accountService.requireOwned(conta, user.getId()))
+                .thenReturn(ConnectorAccount.builder().id(conta).user(user).build());
+        when(bankTransactionRepository.assignAccountToUpload(user.getId(), conta, upload)).thenReturn(37);
+
+        // Reimportar não resolveria: o upload é idempotente por hash e a
+        // segunda tentativa não grava nada
+        assertThat(service.assignUploadAccount(user.getEmail(), upload, conta)).isEqualTo(37);
+    }
+
+    @Test
+    @DisplayName("importação de outra pessoa responde 404 e não carimba nada")
+    void refusesToAssignAForeignUpload() {
+        UUID upload = UUID.randomUUID();
+        UUID conta = UUID.randomUUID();
+        when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        when(statementUploadRepository.findByIdAndUserId(upload, user.getId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.assignUploadAccount(user.getEmail(), upload, conta))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(bankTransactionRepository, never()).assignAccountToUpload(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("upload manual de arquivo grava origem NULA — não existe conta de provedor para inventar")
     void manualUploadShouldLeaveOriginNull() {
         emptyWindow();
