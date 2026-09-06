@@ -28,7 +28,23 @@ public class PdfParser implements StatementParserStrategy {
     @Override
     public List<ParsedTransaction> parse(InputStream input) {
         try (PDDocument document = Loader.loadPDF(input.readAllBytes())) {
-            String text = new PDFTextStripper().getText(document);
+            PDFTextStripper stripper = new PDFTextStripper();
+            // Ordenar por posição é o que mantém a linha do lançamento inteira:
+            // sem isto, num layout de colunas o texto sai na ordem em que foi
+            // desenhado, e data, valor e descrição chegam embaralhados
+            stripper.setSortByPosition(true);
+            String text = stripper.getText(document);
+
+            // O Mercado Pago não exporta OFX nem CSV — PDF é o único formato que
+            // o cliente consegue baixar. O layout dele quebra a descrição em três
+            // linhas e o leitor genérico não dá conta; ver MercadoPagoPdfLayout.
+            if (MercadoPagoPdfLayout.reconhece(text)) {
+                List<ParsedTransaction> mercadoPago = MercadoPagoPdfLayout.parse(text);
+                if (!mercadoPago.isEmpty()) return mercadoPago;
+                log.warn("PDF reconhecido como Mercado Pago, mas sem lançamentos legíveis — "
+                        + "seguindo pelo leitor genérico");
+            }
+
             List<ParsedTransaction> raw = txtParser.parse(
                     new java.io.ByteArrayInputStream(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 
