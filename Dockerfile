@@ -17,7 +17,7 @@ COPY --from=build /app/target/*.jar app.jar
 # Mesmos valores do render.yaml (que sobrescreve esta linha em producao) e pelo
 # mesmo motivo: o teto tem de caber no CONTAINER, contando metaspace, buffers
 # diretos e pilhas de thread — nao so no heap. Ver o comentario longo la.
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=50 -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC"
+ENV JAVA_OPTS="-Xmx256m -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC"
 
 EXPOSE 8080
 

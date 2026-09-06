@@ -101,7 +101,11 @@ services:
       # sabe reportar e da qual ele se recupera) em vez do servico inteiro
       # caindo para todo mundo.
       #
-      #   MaxRAMPercentage=50 .. 256 MB de heap, e acompanha o plano se ele mudar
+      #   Xmx256m ............ teto EXPLICITO, e nao percentual: medido em
+      #                        producao, MaxRAMPercentage=50 resolveu 348 MB —
+      #                        a JVM enxerga mais memoria do que o container
+      #                        tem de fato, e o percentual mirava no numero
+      #                        errado justamente no ponto que se queria corrigir
       #   MaxMetaspaceSize ... teto explicito; sem ele o metaspace cresce ate o
       #                        container acabar
       #   MaxDirectMemorySize  a Netty aloca fora do heap e, sem teto, ignora o Xmx
@@ -110,4 +114,4 @@ services:
       #   UseSerialGC ........ heap pequeno em 0,1 CPU: o G1 cobra mais em
       #                        estruturas e threads de GC do que devolve aqui
       - key: JAVA_OPTS
-        value: -XX:MaxRAMPercentage=50 -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC
+        value: -Xmx256m -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC
