@@ -22,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,6 +57,9 @@ class CardInvoiceServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private InvoiceReserveService reserveService;
+
     private CardInvoiceService service;
 
     private User user;
@@ -63,7 +67,10 @@ class CardInvoiceServiceTest {
     @BeforeEach
     void setUp() {
         user = User.builder().id(UUID.randomUUID()).email(EMAIL).name("Teste").password("x").build();
-        service = new CardInvoiceService(accountService, bankTransactionRepository, userRepository);
+        service = new CardInvoiceService(accountService, bankTransactionRepository, userRepository,
+                reserveService);
+        // sem reserva é o caso comum; os testes do EC-181 sobrescrevem
+        lenient().when(reserveService.byReference(any(), any())).thenReturn(Map.of());
         lenient().when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
     }
 

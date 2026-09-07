@@ -91,7 +91,34 @@ public record CardInvoicesResponse(
             int transactionCount,
             // O ciclo ainda não fechou — é a fatura em aberto
             boolean open,
+            // A reserva deste ciclo (EC-181), ou nulo quando o dono não separou
+            // nada para esta fatura. Vem DENTRO da fatura porque é sobre ela que
+            // a reserva fala: separar dinheiro "para o cartão" sem dizer para qual
+            // ciclo não responde à pergunta que a tela faz — "esta aqui está
+            // coberta?". Quem compara reserva e total é a leitura: o valor pode ser
+            // menor (cobre em parte) ou maior (a fatura ainda vai crescer)
+            Reserve reserve,
             List<BankTransactionResponse> transactions
+    ) {
+    }
+
+    /**
+     * Dinheiro já separado para pagar esta fatura — EC-181.
+     *
+     * <p>Não é lançamento e não entra em soma nenhuma: nada saiu da conta. É a
+     * declaração de que parte do saldo tem destino certo, para o app poder
+     * mostrar "a de setembro já está coberta" sem falsificar o extrato.
+     *
+     * <p>{@code heldInAccountId} e {@code heldInAccountName} são nulos quando o
+     * dono separou fora do que o sistema enxerga, ou quando a conta que
+     * guardava o valor foi desconectada depois.
+     */
+    public record Reserve(
+            UUID id,
+            BigDecimal amount,
+            UUID heldInAccountId,
+            String heldInAccountName,
+            String note
     ) {
     }
 }

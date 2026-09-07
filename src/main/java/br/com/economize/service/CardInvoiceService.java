@@ -18,6 +18,7 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -53,6 +54,7 @@ public class CardInvoiceService {
     private final ConnectorAccountService accountService;
     private final BankTransactionRepository bankTransactionRepository;
     private final UserRepository userRepository;
+    private final InvoiceReserveService reserveService;
 
     public CardInvoicesResponse invoices(String email, UUID accountId, int months) {
         // validação de entrada antes de qualquer I/O, como no sync do EC-106:
@@ -95,6 +97,10 @@ public class CardInvoiceService {
                         windowStart.atStartOfDay().atOffset(ZoneOffset.UTC),
                         windowEnd.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC));
 
+        // Uma consulta para todas as reservas do cartão (EC-181): dentro do
+        // laço seria uma por ciclo, e a janela chega a 24
+        Map<String, CardInvoicesResponse.Reserve> reservas =
+                reserveService.byReference(user.getId(), account.getId());
         List<CardInvoicesResponse.Invoice> invoices = new ArrayList<>();
         for (Cycle cycle : cycles) {
             List<BankTransaction> inCycle = transactions.stream()
@@ -103,7 +109,8 @@ public class CardInvoiceService {
             // ciclo vazio não vira fatura: o usuário abriria um mês em branco de
             // um cartão que só começou a ser sincronizado depois
             if (inCycle.isEmpty()) continue;
-            invoices.add(toInvoice(cycle, inCycle, today));
+            invoices.add(toInvoice(cycle, inCycle, today,
+                    reservas.get(cycle.reference().toString())));
         }
         return new CardInvoicesResponse(account.getId(), account.getName(), account.getType(),
                 account.getInstitution(), source, invoices);
@@ -129,7 +136,9 @@ public class CardInvoiceService {
      * como estorno, abatendo o total. O erro é sempre a favor do usuário — mostra
      * dívida menor, nunca maior — e some na sincronização em que a marca chegar.
      */
-    private CardInvoicesResponse.Invoice toInvoice(Cycle cycle, List<BankTransaction> inCycle, LocalDate today) {
+    private CardInvoicesResponse.Invoice toInvoice(Cycle cycle, List<BankTransaction> inCycle,
+                                                   LocalDate today,
+                                                   CardInvoicesResponse.Reserve reserve) {
         BigDecimal purchases = BigDecimal.ZERO;
         BigDecimal refunds = BigDecimal.ZERO;
         BigDecimal payments = BigDecimal.ZERO;
@@ -156,6 +165,7 @@ public class CardInvoiceService {
                 payments,
                 inCycle.size(),
                 !cycle.end().isBefore(today),
+                reserve,
                 inCycle.stream().map(BankTransactionResponse::from).toList());
     }
 

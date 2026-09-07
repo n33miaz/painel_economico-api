@@ -10,6 +10,7 @@ import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
 import br.com.economize.service.CardInvoiceService;
+import br.com.economize.service.InvoiceReserveService;
 import br.com.economize.service.ConnectorAccountService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,9 @@ class AccountControllerTest {
 
     @MockitoBean
     private CardInvoiceService cardInvoiceService;
+
+    @MockitoBean
+    private InvoiceReserveService invoiceReserveService;
 
     @Test
     @DisplayName("GET /accounts - lista as origens com nome, tipo e metadados de fatura")
@@ -93,7 +97,10 @@ class AccountControllerTest {
                         "2026-08", LocalDate.of(2026, 7, 11), LocalDate.of(2026, 8, 10),
                         LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 17),
                         new BigDecimal("1234.56"), new BigDecimal("1334.56"), new BigDecimal("100.00"),
-                        new BigDecimal("900.00"), 12, false, List.of()))));
+                        new BigDecimal("900.00"), 12, false,
+                        new CardInvoicesResponse.Reserve(UUID.randomUUID(), new BigDecimal("641.14"),
+                                null, "Mercado Pago ····7340", "deixei separado"),
+                        List.of()))));
 
         webTestClient.get()
                 .uri("/api/v1/accounts/" + id + "/invoices")
@@ -110,7 +117,11 @@ class AccountControllerTest {
                 .jsonPath("$.invoices[0].purchasesTotal").isEqualTo(1334.56)
                 .jsonPath("$.invoices[0].refundsTotal").isEqualTo(100.00)
                 .jsonPath("$.invoices[0].paymentsTotal").isEqualTo(900.00)
-                .jsonPath("$.invoices[0].open").isEqualTo(false);
+                .jsonPath("$.invoices[0].open").isEqualTo(false)
+                // EC-181: a reserva viaja DENTRO da fatura que ela cobre
+                .jsonPath("$.invoices[0].reserve.amount").isEqualTo(641.14)
+                .jsonPath("$.invoices[0].reserve.heldInAccountName")
+                .isEqualTo("Mercado Pago ····7340");
 
         // o default da janela é 6 ciclos
         verify(cardInvoiceService).invoices(EMAIL, id, 6);
@@ -146,6 +157,60 @@ class AccountControllerTest {
                 .expectStatus().isBadRequest()
                 .expectBody()
                 .jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("entre 1 e 24"));
+    }
+
+    @Test
+    @DisplayName("PUT reserve - separa o valor da fatura e devolve onde ele está")
+    void saveReserveReturnsWhereTheMoneyIs() {
+        UUID id = UUID.randomUUID();
+        UUID cofre = UUID.randomUUID();
+        UUID reservaId = UUID.randomUUID();
+        when(invoiceReserveService.save(eq(EMAIL), eq(id), eq("2026-09"),
+                eq(new BigDecimal("641.14")), eq(cofre), eq("deixei separado")))
+                .thenReturn(new CardInvoicesResponse.Reserve(reservaId, new BigDecimal("641.14"),
+                        cofre, "Mercado Pago ····7340", "deixei separado"));
+
+        webTestClient.put()
+                .uri("/api/v1/accounts/" + id + "/invoices/2026-09/reserve")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .bodyValue(java.util.Map.of(
+                        "amount", "641.14",
+                        "heldInAccountId", cofre.toString(),
+                        "note", "deixei separado"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.amount").isEqualTo(641.14)
+                .jsonPath("$.heldInAccountName").isEqualTo("Mercado Pago ····7340");
+    }
+
+    @Test
+    @DisplayName("PUT reserve - valor não positivo é barrado na validação, sem chegar ao serviço")
+    void saveReserveRejectsNonPositiveAmount() {
+        UUID id = UUID.randomUUID();
+
+        webTestClient.put()
+                .uri("/api/v1/accounts/" + id + "/invoices/2026-09/reserve")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .bodyValue(java.util.Map.of("amount", "0"))
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        verifyNoInteractions(invoiceReserveService);
+    }
+
+    @Test
+    @DisplayName("DELETE reserve - responde 204 mesmo quando não havia reserva")
+    void deleteReserveIsIdempotent() {
+        UUID id = UUID.randomUUID();
+
+        webTestClient.delete()
+                .uri("/api/v1/accounts/" + id + "/invoices/2026-09/reserve")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .exchange()
+                .expectStatus().isNoContent();
+
+        verify(invoiceReserveService).delete(EMAIL, id, "2026-09");
     }
 
     private String bearerToken() {
