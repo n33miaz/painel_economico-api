@@ -1,5 +1,6 @@
 package br.com.economize.service.statement.category;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -33,6 +34,28 @@ class RuleBasedCategorizationServiceTest {
         assertThat(keyOf("IFD*REI DO ARTESANAL H SEROPEDICA BRA")).isEqualTo("FOOD_DELIVERY");
         assertThat(keyOf("IFD *FOOD ACAI LTDA")).isEqualTo("FOOD_DELIVERY");
         assertThat(keyOf("99Food *Esfihas Ariston p Sao Paulo BRA")).isEqualTo("FOOD_DELIVERY");
+    }
+
+    @Test
+    void reconheceAFolhaDePagamentoDoExtratoReal() {
+        // Medido no extrato real do dono: o MAIOR crédito recorrente dele é
+        // "LIQUIDO DE VENCIMENTO CNPJ ..." e não casava com nada. Caía no
+        // fallback, parava na raiz "Receitas" e ficava fora de "Salário" — que
+        // é justamente de onde saem o valor da hora e o cálculo de renda.
+        assertThat(keyOf("LIQUIDO DE VENCIMENTO   CNPJ 006210366000171"))
+                .isEqualTo("INCOME_SALARY");
+        assertThat(keyOf("Salário recebido - portabilidade")).isEqualTo("INCOME_SALARY");
+        assertThat(keyOf("PRO LABORE SETEMBRO")).isEqualTo("INCOME_SALARY");
+    }
+
+    @Test
+    void vencimentoDaFaturaNaoEhSalario() {
+        // "vencimento" solto casaria com o vencimento de uma fatura, e o
+        // pagamento do cartão viraria salário recebido. É por isso que a regra
+        // usa a frase inteira, e este teste é o que impede alguém de encurtá-la.
+        assertThat(keyOf("Pagamento fatura cartao Inter - vencimento 14/09"))
+                .isNotEqualTo("INCOME_SALARY");
+        assertThat(keyOf("Boleto vencimento 10/10")).isNotEqualTo("INCOME_SALARY");
     }
 
     @Test
@@ -187,5 +210,50 @@ class RuleBasedCategorizationServiceTest {
             assertThat(in).as("migration %s", resource).isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
+    }
+
+    @Test
+    @DisplayName("Razão social no extrato: o vocabulário só conhecia a marca")
+    void reconheceRazaoSocialDoExtratoReal() {
+        // Todas estas descrições são do extrato real da conta importada em
+        // 07/09/2026, e todas caíam em "Transferências > Pix": o pagamento por
+        // QR do Mercado Pago traz a razão social, e o vocabulário conhecia
+        // "99app"/"99pop" mas não "99 TECNOLOGIA LTDA". É a mesma classe do IFD*.
+        assertThat(keyOf("Pagamento com QR Pix 99 TECNOLOGIA LTDA"))
+                .isEqualTo("TRANSPORT_RIDE");
+        assertThat(keyOf("Pagamento com QR Pix PRODATA MOBILITY BRASIL"))
+                .isEqualTo("TRANSPORT_PUBLIC");
+        assertThat(keyOf("Pagamento com QR Pix BB TRANSPORTE E TURISMO"))
+                .isEqualTo("TRANSPORT_PUBLIC");
+        assertThat(keyOf("COMERCIO DE MATERIAIS PARA CONSTRUCAO JOLI LTDA"))
+                .isEqualTo("HOUSING_GOODS");
+        assertThat(keyOf("SERVICO NACIONAL DE APRENDIZAGEM COMERCIAL SENAC"))
+                .isEqualTo("EDUCATION_COURSES");
+    }
+
+    @Test
+    @DisplayName("O crédito do vale-refeição é BENEFÍCIO, e chega pelo nome da emissora")
+    void creditoDeValeRefeicaoEhBeneficio() {
+        // "Pix recebido Flash Tecnologia e Instituição de Pagamento Ltda" é o
+        // vale-refeição caindo na conta. Como transferência, ele não entrava na
+        // renda e ficava fora do valor da hora e do lembrete de queda do
+        // benefício (ponto em aberto do registro 63.11).
+        assertThat(keyOf("Pix recebido Flash Tecnologia e Instituicao de Pagamento Ltda"))
+                .isEqualTo("INCOME_BENEFITS");
+        assertThat(keyOf("Credito de vale refeicao")).isEqualTo("INCOME_BENEFITS");
+        assertThat(keyOf("ALELO BENEFICIOS")).isEqualTo("INCOME_BENEFITS");
+    }
+
+    @Test
+    @DisplayName("O estabelecimento continua vencendo o meio de pagamento")
+    void estabelecimentoVenceOMeio() {
+        // A guarda que protege as palavras novas: elas chegam DEPOIS da palavra
+        // "Pix" na descrição, e o meio não pode voltar a sequestrar a linha
+        assertThat(keyOf("Pagamento com QR Pix UBER DO BRASIL TECNOLOGIA"))
+                .isEqualTo("TRANSPORT_RIDE");
+        assertThat(keyOf("Pagamento com QR Pix SUPERMERCADOS SEROPEDICA LTDA"))
+                .isEqualTo("FOOD_GROCERIES");
+        // e um Pix para uma PESSOA continua sendo Pix: não há estabelecimento
+        assertThat(keyOf("Pix enviado Marianna de Oliveira Avelar")).isEqualTo("TRANSFER_PIX");
     }
 }

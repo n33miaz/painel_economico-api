@@ -89,16 +89,20 @@ public class RuleBasedCategorizationService {
             // Transferências
             new Rule("FOOD_RESTAURANT", "FOOD", List.of("restaurant", "lanch", "pizzaria", "churrascaria", "hamburgueria", "bar e ", "burger", "mc donalds", "mcdonald", "burger king", "subway", "outback", "habibs", "habib's")),
             // Transporte
-            new Rule("TRANSPORT_RIDE", "TRANSPORT", List.of("uber", "99app", "99 pop", "99pop", "cabify", "indriver")),
+            new Rule("TRANSPORT_RIDE", "TRANSPORT", List.of("uber", "99app", "99 pop", "99pop",
+                    "99 tecnologia", "99tecnologia", "cabify", "indriver")),
             new Rule("TRANSPORT_FUEL", "TRANSPORT", List.of("posto", "gasolina", "ipiranga", "shell", "petrobras", "combustivel", "combustível", "etanol")),
-            new Rule("TRANSPORT_PUBLIC", "TRANSPORT", List.of("autopass", "bilhete unico", "bilhete único", "meio de transporte", "metro ", "metrô", "cptm", "onibus", "ônibus", "sptrans", "riocard", "bom cartao", "bom cartão")),
+            new Rule("TRANSPORT_PUBLIC", "TRANSPORT", List.of("autopass", "bilhete unico", "bilhete único", "meio de transporte", "metro ", "metrô", "cptm", "onibus", "ônibus", "sptrans", "riocard", "bom cartao", "bom cartão",
+                    "prodata", "transporte e turismo", "recargapay *transport")),
             new Rule("TRANSPORT_PARKING", "TRANSPORT", List.of("estacionamento", "zona azul", "pedagio", "pedágio", "sem parar", "conectcar", "veloe", "parking")),
             new Rule("TRANSPORT_VEHICLE", "TRANSPORT", List.of("ipva", "licenciamento", "detran", "oficina", "auto center", "pneu", "revisao veicular", "revisão veicular", "multa de transito", "multa de trânsito")),
             // Moradia
             new Rule("HOUSING_RENT", "HOUSING", List.of("aluguel", "imobiliaria", "imobiliária", "locacao imovel", "locação imóvel")),
             new Rule("HOUSING_CONDO", "HOUSING", List.of("condominio", "condomínio")),
             new Rule("HOUSING_PROPERTY_TAX", "HOUSING", List.of("iptu")),
-            new Rule("HOUSING_GOODS", "HOUSING", List.of("leroy merlin", "telhanorte", "casa e construcao", "casa e construção", "material de construcao", "material de construção", "tok stok", "mobly", "madeiramadeira")),
+            new Rule("HOUSING_GOODS", "HOUSING", List.of("leroy merlin", "telhanorte", "casa e construcao", "casa e construção", "material de construcao", "material de construção",
+                    "materiais para construcao", "materiais para construção",
+                    "materiais de construcao", "materiais de construção", "tok stok", "mobly", "madeiramadeira")),
             // Contas e serviços
             new Rule("UTILITIES_ELECTRICITY", "UTILITIES", List.of("energia", "eletropaulo", "enel", "cemig", "copel", "light servicos", "light serviços", "celesc", "coelba", "neoenergia", "cpfl")),
             new Rule("UTILITIES_WATER", "UTILITIES", List.of("sabesp", "saneamento", "cedae", "copasa", "sanepar", "embasa", "agua e esgoto", "água e esgoto")),
@@ -139,7 +143,8 @@ public class RuleBasedCategorizationService {
             new Rule("PERSONAL_BEAUTY", "PERSONAL_CARE", List.of("barbearia", "salao de beleza", "salão de beleza", "cabeleireiro", "manicure", "estetica", "estética", "spa ")),
             new Rule("PERSONAL_LAUNDRY", "PERSONAL_CARE", List.of("lavanderia", "lava e seca")),
             // Educação
-            new Rule("EDUCATION_COURSES", "EDUCATION", List.of("udemy", "coursera", "alura", "curso ", "hotmart", "rocketseat", "duolingo")),
+            new Rule("EDUCATION_COURSES", "EDUCATION", List.of("udemy", "coursera", "alura", "curso ",
+                    "hotmart", "rocketseat", "duolingo", "senac", "senai", "sebrae")),
             new Rule("EDUCATION_SCHOOL", "EDUCATION", List.of("escola", "faculdade", "universidade", "colegio", "colégio", "mensalidade escolar", "creche")),
             new Rule("EDUCATION_BOOKS", "EDUCATION", List.of("livraria", "saraiva", "cultura livraria", "material escolar")),
             // Lazer
@@ -161,10 +166,23 @@ public class RuleBasedCategorizationService {
             new Rule("FEES_INTEREST", "FEES_TAXES", 0, true, List.of("juros", "multa por atraso", "encargos", "mora ")),
             new Rule("FEES_TAX", "FEES_TAXES", List.of("imposto", "darf", "irrf", "tributo", "das simples")),
             // Receitas
-            new Rule("INCOME_SALARY", "INCOME", List.of("salario", "salário", "folha de pagamento", "adiantamento salarial", "13o salario", "férias")),
+            // "liquido de vencimento" é como a folha de pagamento aparece no
+            // extrato do Inter (com o CNPJ do empregador ao lado) e não casava
+            // com nada: o maior crédito recorrente do dono caía no fallback,
+            // parava na RAIZ "Receitas" e ficava fora de "Salário" — o que
+            // esvazia o valor da hora e o cálculo de renda. "vencimento" sozinho
+            // está FORA de propósito: casaria "vencimento da fatura".
+            new Rule("INCOME_SALARY", "INCOME", List.of("salario", "salário", "folha de pagamento",
+                    "adiantamento salarial", "13o salario", "férias",
+                    "liquido de vencimento", "líquido de vencimento", "vencimentos",
+                    "remuneracao", "remuneração", "pro labore", "pró-labore")),
             new Rule("INCOME_CASHBACK", "INCOME", List.of("cashback", "estorno", "reembolso", "devolucao", "devolução")),
             new Rule("INCOME_YIELDS", "INCOME", List.of("rendimento", "dividendo", "jcp", "juros sobre capital", "proventos")),
-            new Rule("INCOME_BENEFITS", "INCOME", List.of("bolsa familia", "bolsa família", "auxilio", "auxílio", "inss", "seguro desemprego", "pis pasep")),
+            new Rule("INCOME_BENEFITS", "INCOME", List.of("bolsa familia", "bolsa família", "auxilio",
+                    "auxílio", "inss", "seguro desemprego", "pis pasep",
+                    "flash tecnologia", "vale refeicao", "vale refeição",
+                    "vale alimentacao", "vale alimentação", "ticket restaurante",
+                    "sodexo", "alelo", "vr beneficios", "vr benefícios", "caju beneficios")),
             new Rule("INCOME_FREELANCE", "INCOME", List.of("freela", "prestacao de servico", "prestação de serviço", "nota fiscal recebida")),
             // Investimentos
             new Rule("INVESTMENT_FIXED", "INVESTMENT", List.of("cdb", "rdb", "lci", "lca", "tesouro", "poupanca", "poupança", "aplicacao", "aplicação", "renda fixa", "cofrinho", "porquinho", "caixinha")),
