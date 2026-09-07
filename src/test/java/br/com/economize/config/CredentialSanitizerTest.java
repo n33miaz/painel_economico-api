@@ -36,7 +36,12 @@ class CredentialSanitizerTest {
     @Test
     void overridesTheDirtyValueForEveryoneWhoResolvesPlaceholders() {
         StandardEnvironment environment = new StandardEnvironment();
-        environment.getPropertySources().addLast(new MapPropertySource("teste",
+        // addFirst, e não addLast: o StandardEnvironment já nasce com o ambiente
+        // DE VERDADE da máquina, que tem precedência sobre o que vier por último.
+        // Na CI, onde DB_PASSWORD=sa está exportado para o contexto subir, o
+        // valor do teste era ignorado e a asserção lia "sa" — um teste vermelho
+        // que não dizia nada sobre o código, só sobre a máquina
+        environment.getPropertySources().addFirst(new MapPropertySource("teste",
                 Map.of("DB_PASSWORD", "senha-com-espaco  ", "DB_USER", "postgres.abc")));
 
         sanitizer.postProcessEnvironment(environment, new SpringApplication());
