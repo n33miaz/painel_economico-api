@@ -16,6 +16,12 @@ import java.util.UUID;
 
 @Repository
 public interface BankTransactionRepository extends JpaRepository<BankTransaction, UUID> {
+    /**
+     * Quantas linhas de extrato o usuário tem. O contador do Perfil vinha do
+     * tamanho da lista inteira (100 KB por abertura para desenhar um número).
+     */
+    long countByUserId(UUID userId);
+
     List<BankTransaction> findAllByUserIdOrderByDateDesc(UUID userId);
 
     boolean existsByUserIdAndTransactionId(UUID userId, String transactionId);
@@ -88,6 +94,7 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             from BankTransaction t
             where t.user.id = :userId and t.date >= :start and t.date < :end
               and t.internalTransfer = false
+              and t.ignored = false
             group by t.categoryId, t.type
             """)
     List<CategoryTotal> sumByCategory(@Param("userId") UUID userId,
@@ -126,6 +133,7 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             from BankTransaction t
             where t.user.id = :userId and t.date >= :start and t.date < :end
               and t.internalTransfer = false
+              and t.ignored = false
               and (t.categoryId is null or t.categoryId not in :hiddenCategoryIds)
               and ((t.accountId is null and :includeUnassigned = true)
                    or (t.accountId is not null
@@ -144,6 +152,7 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             select t from BankTransaction t
             where t.user.id = :userId and t.date >= :start and t.date < :end
               and t.internalTransfer = false
+              and t.ignored = false
               and (t.categoryId is null or t.categoryId not in :hiddenCategoryIds)
               and ((t.accountId is null and :includeUnassigned = true)
                    or (t.accountId is not null
@@ -203,6 +212,7 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             where t.user.id = :userId
               and t.amount = :amount
               and t.internalTransfer = false
+              and t.ignored = false
               and t.date >= :start and t.date < :end
             order by t.date asc
             """)
@@ -219,6 +229,18 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
     @Query("update BankTransaction t set t.internalTransfer = true "
             + "where t.user.id = :userId and t.id in :ids")
     int markAsInternalTransfer(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
+
+    /**
+     * Marca em bloco o lado descartado de pares duplicados (V26). O motivo viaja
+     * junto porque distingue o que a varredura decidiu do que a pessoa decidiu —
+     * e só o primeiro pode ser revisto por uma varredura futura.
+     */
+    @Modifying
+    @Transactional
+    @Query("update BankTransaction t set t.ignored = true, "
+            + "t.ignoredReason = br.com.economize.model.BankTransaction$IgnoredReason.DUPLICATE "
+            + "where t.user.id = :userId and t.id in :ids")
+    int markAsIgnoredDuplicate(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
 
     interface CategoryTotal {
         UUID getCategoryId();

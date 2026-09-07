@@ -98,6 +98,31 @@ public class BankTransaction {
     @Column(name = "internal_transfer", nullable = false)
     private boolean internalTransfer;
 
+    /**
+     * A linha não deveria existir — quase sempre a mesma transação que entrou
+     * pela conexão bancária E por um arquivo importado (V26).
+     *
+     * <p>Não confundir com {@link #internalTransfer}: lá o movimento existiu e
+     * só não é receita nem despesa; aqui a linha é um fantasma. Ignorada sai de
+     * toda soma, continua no extrato com selo, e volta com um toque — apagar
+     * seria irreversível, e reimportar o arquivo não desfaz (o upload é
+     * idempotente por hash).
+     */
+    @Column(nullable = false)
+    private boolean ignored;
+
+    /** Quem decidiu ignorar: a varredura de duplicatas, ou a pessoa. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ignored_reason", length = 16)
+    private IgnoredReason ignoredReason;
+
+    public enum IgnoredReason {
+        /** A varredura pareou esta linha com outra igual de outra fonte. */
+        DUPLICATE,
+        /** Decisão manual — a varredura nunca a desfaz. */
+        USER
+    }
+
     @Column(nullable = false)
     private OffsetDateTime date;
 
