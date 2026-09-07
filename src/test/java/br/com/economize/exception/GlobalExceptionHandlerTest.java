@@ -1,7 +1,12 @@
 package br.com.economize.exception;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
@@ -59,6 +64,30 @@ class GlobalExceptionHandlerTest {
 
         assertThat(metodo.getStatus()).isEqualTo(405);
         assertThat(tipo.getStatus()).isEqualTo(415);
+    }
+
+    @Test
+    @DisplayName("recurso não encontrado devolve 404 sem uma linha de WARN no log")
+    void recursoNaoEncontradoNaoGeraWarn() {
+        // A Home pergunta pela casa de TODO usuário: "Você ainda não faz parte
+        // de uma casa" era a linha mais frequente do log de produção, em WARN.
+        // 404 é resposta normal, e o log dele é DEBUG.
+        Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            ProblemDetail problem = handler.handleResourceNotFoundException(
+                    new ResourceNotFoundException("Você ainda não faz parte de uma casa"));
+
+            assertThat(problem.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+            assertThat(problem.getDetail()).isEqualTo("Você ainda não faz parte de uma casa");
+            assertThat(problem.getTitle()).isEqualTo("Não Encontrado");
+            assertThat(appender.list)
+                    .noneMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test

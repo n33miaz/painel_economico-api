@@ -30,9 +30,18 @@ public class GlobalExceptionHandler {
                 return problemDetail;
         }
 
+        /**
+         * 404 é resposta normal, não incidente — por isso o log é DEBUG, e não
+         * WARN. A Home pergunta pela casa de TODO usuário, e quem não tem casa
+         * recebe "Você ainda não faz parte de uma casa" a cada abertura do app:
+         * em WARN isso virava a linha mais frequente do log de produção,
+         * enterrando os avisos que de fato pedem atenção. O que é anômalo de
+         * verdade (enumeração de ids, cliente insistindo num recurso apagado)
+         * se enxerga pela métrica de status, não por uma linha por requisição.
+         */
         @ExceptionHandler(ResourceNotFoundException.class)
         public ProblemDetail handleResourceNotFoundException(ResourceNotFoundException ex) {
-                log.warn("Recurso não encontrado: {}", ex.getMessage());
+                log.debug("Recurso não encontrado: {}", ex.getMessage());
                 ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
                 problemDetail.setTitle("Não Encontrado");
                 problemDetail.setType(Objects
