@@ -37,6 +37,19 @@ public class XlsxParser implements StatementParserStrategy {
             Sheet sheet = wb.getSheetAt(0);
             if (sheet == null) return out;
             Map<String, Integer> header = readHeader(sheet.getRow(sheet.getFirstRowNum()));
+            // Layouts com cabeçalho próprio vêm ANTES do genérico: o relatório do
+            // Mercado Pago não tem coluna "Data" nem "Valor" e cairia no erro de
+            // "colunas obrigatórias" mesmo sendo um extrato perfeitamente legível
+            MercadoPagoSettlementLayout mercadoPago = MercadoPagoSettlementLayout.detect(header);
+            if (mercadoPago != null) {
+                for (int i = sheet.getFirstRowNum() + 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+                    ParsedTransaction tx = mercadoPago.map(row);
+                    if (tx != null) out.add(tx);
+                }
+                return out;
+            }
             int dateCol = pick(header, "data", "date");
             int descCol = pick(header, "descrição", "descricao", "description", "histórico", "historico");
             int amountCol = pick(header, "valor", "amount");

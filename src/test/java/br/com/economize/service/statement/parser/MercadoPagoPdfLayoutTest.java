@@ -156,4 +156,38 @@ class MercadoPagoPdfLayoutTest {
 
         assertThat(MercadoPagoPdfLayout.parse(vazio)).isEmpty();
     }
+
+    @Test
+    @DisplayName("Mês parado: o extrato diz que não houve movimento, e isso não é falha de leitura")
+    void reconheceMesSemMovimento() {
+        // Texto real do extrato de abril/2026 (conta que ficou o mês inteiro
+        // zerada). Sem esta distinção o upload respondia "não foi possível
+        // extrair transações confiáveis — exporte em OFX", que manda procurar
+        // defeito num arquivo perfeito.
+        String abril = """
+                EXTRATO DE CONTA
+                Fulana de Tal
+                CPF/CNPJ: 00000000000  1  76986963927Agencia: Conta:
+                 De 01-04-2026 al 30-04-2026Periodo:
+                Saldo inicial: R$ 0,00
+                Entradas: R$ 0,00
+                Saidas: R$ 0,00
+                DETALHE DOS MOVIMENTOS
+                Data Descricao ID da operacao Valor Saldo
+                Saldo final: R$ 0,00
+                Mercado Pago Instituicao de Pagamento Ltda.
+                """;
+
+        assertThat(MercadoPagoPdfLayout.reconhece(abril)).isTrue();
+        assertThat(MercadoPagoPdfLayout.parse(abril)).isEmpty();
+        assertThat(MercadoPagoPdfLayout.semMovimento(abril)).isTrue();
+    }
+
+    @Test
+    @DisplayName("Extrato COM movimento nunca é confundido com mês parado")
+    void mesComMovimentoNaoEhZerado() {
+        // A guarda importa nos dois sentidos: um extrato cheio marcado como
+        // "sem movimento" faria o upload recusar dado bom
+        assertThat(MercadoPagoPdfLayout.semMovimento(TEXTO)).isFalse();
+    }
 }

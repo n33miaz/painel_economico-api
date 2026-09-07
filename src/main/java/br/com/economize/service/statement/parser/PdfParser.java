@@ -41,6 +41,15 @@ public class PdfParser implements StatementParserStrategy {
             if (MercadoPagoPdfLayout.reconhece(text)) {
                 List<ParsedTransaction> mercadoPago = MercadoPagoPdfLayout.parse(text);
                 if (!mercadoPago.isEmpty()) return mercadoPago;
+                // Extrato de mês parado: o documento foi lido inteiro e diz, ele
+                // mesmo, que não houve movimento. Mandar exportar em OFX aqui é
+                // culpar o arquivo por um mês em que nada aconteceu, e faz o
+                // usuário procurar defeito onde não há.
+                if (MercadoPagoPdfLayout.semMovimento(text)) {
+                    throw new IllegalArgumentException(
+                            "Este extrato não tem lançamentos no período — "
+                                    + "o próprio arquivo informa entradas e saídas zeradas");
+                }
                 log.warn("PDF reconhecido como Mercado Pago, mas sem lançamentos legíveis — "
                         + "seguindo pelo leitor genérico");
             }

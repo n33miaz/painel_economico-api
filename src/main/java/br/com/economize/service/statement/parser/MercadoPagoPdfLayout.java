@@ -95,6 +95,25 @@ final class MercadoPagoPdfLayout {
         return texto.contains(MARCA_TITULO) && texto.contains(MARCA_EMISSOR);
     }
 
+    /**
+     * O próprio extrato declara que não houve movimento no período?
+     *
+     * <p>Existe para separar duas coisas que o usuário sente igual e não são:
+     * "não consegui ler este arquivo" e "este mês não teve lançamento". O extrato
+     * de abril/2026 da conta da esposa do dono é exatamente o segundo caso —
+     * entradas 0,00, saídas 0,00, saldo final 0,00 — e a mensagem antiga mandava
+     * exportar em OFX, o que fazia procurar defeito onde não havia nenhum.
+     */
+    static boolean semMovimento(String texto) {
+        return ZERADO.matcher(texto).find() && SAIDAS_ZERADAS.matcher(texto).find();
+    }
+
+    // "Entradas: R$ 0,00" e "Saidas: R$ 0,00" (com ou sem acento, com sinal ou não)
+    private static final Pattern ZERADO =
+            Pattern.compile("(?i)entradas\\s*:\\s*R\\$\\s*-?0[.,]00");
+    private static final Pattern SAIDAS_ZERADAS =
+            Pattern.compile("(?i)sa[ií]das\\s*:\\s*R\\$\\s*-?0[.,]00");
+
     static List<ParsedTransaction> parse(String texto) {
         List<Lancamento> lancamentos = new ArrayList<>();
         List<String> sobrasPendentes = new ArrayList<>();
