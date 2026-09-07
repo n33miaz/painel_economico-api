@@ -29,6 +29,9 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         // Rotas públicas
                         .pathMatchers("/api/v1/auth/**").permitAll()
+                        // Versão mínima do app: o cliente pergunta ANTES de ter
+                        // token — e o app antigo pode nem conseguir um
+                        .pathMatchers("/api/v1/app/version").permitAll()
                         // `/swagger-ui.html` é a PORTA de entrada e não casa com
                         // `/swagger-ui/**` (que exige a barra): sem ela na lista,
                         // quem abria a documentação levava 401 antes de qualquer

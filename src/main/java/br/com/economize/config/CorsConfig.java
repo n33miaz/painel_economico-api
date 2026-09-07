@@ -1,5 +1,6 @@
 package br.com.economize.config;
 
+import br.com.economize.security.AppVersionFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,7 +26,12 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE));
+        // Os cabeçalhos de versão do app precisam estar aqui: o navegador só os
+        // envia se o preflight os listar, e sem eles o app web seria tratado
+        // como cliente sem versão (e barrado no dia em que o bloqueio de
+        // legado ligar)
+        config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
+                AppVersionFilter.VERSION_HEADER, AppVersionFilter.PLATFORM_HEADER));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
