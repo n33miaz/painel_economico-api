@@ -48,7 +48,15 @@ public record BankTransactionResponse(
         // lançamento com o sinal real — este campo diz ao app para NÃO
         // apresentá-lo como receita/despesa do mês, que é como ele entra nos
         // totais. Campo somado ao contrato, nenhum removido.
-        boolean internalTransfer
+        boolean internalTransfer,
+        // V26: a linha entrou duas vezes (pela conexão e por um arquivo) ou o
+        // usuário a descartou. Sai de toda soma e continua no extrato com selo.
+        // Sem este campo o app marcava a linha e não tinha como desenhar a marca
+        boolean ignored,
+        // V28: dinheiro que ficou dentro da casa (Pix entre o casal, mesada).
+        // Sai SÓ da soma da Casa — na análise pessoal do dono da linha o dinheiro
+        // entrou mesmo, e escondê-lo dele seria mentir sobre o extrato
+        boolean familyTransfer
 ) {
     public static BankTransactionResponse from(BankTransaction tx) {
         return new BankTransactionResponse(
@@ -69,6 +77,8 @@ public record BankTransactionResponse(
                 tx.getNormalizedDescription(),
                 tx.getUploadId(),
                 tx.getAccountId(),
-                tx.isInternalTransfer());
+                tx.isInternalTransfer(),
+                tx.isIgnored(),
+                tx.isFamilyTransfer());
     }
 }
