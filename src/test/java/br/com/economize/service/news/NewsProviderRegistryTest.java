@@ -33,12 +33,25 @@ class NewsProviderRegistryTest {
     void shouldBuildDefaultProviders() {
         List<String> ids = registry.getAll().stream().map(NewsProvider::getId).toList();
 
-        assertEquals(11, ids.size());
+        assertEquals(15, ids.size());
         assertTrue(ids.containsAll(List.of(
-                "infomoney", "investnews", "g1-economia", "exame", "seudinheiro",
-                "moneytimes", "bmcnews", "cnn-brasil", "yahoo-finance", "coindesk", "cointelegraph")));
+                "infomoney", "investnews", "g1-economia", "exame", "seudinheiro", "moneytimes", "bmcnews",
+                "valor-investe", "suno", "brazil-journal", "agencia-brasil-economia", "estadao-economia",
+                "yahoo-finance", "coindesk", "cointelegraph")));
         // feed morto (410 Gone) foi removido do catálogo
         assertTrue(ids.stream().noneMatch(id -> id.contains("cointelegraph-br")));
+        // o feed raiz da CNN (categoria geral) era a origem do futebol no radar
+        assertTrue(ids.stream().noneMatch(id -> id.contains("cnn")));
+        // sem id repetido: o id é a chave do snapshot por feed
+        assertEquals(ids.size(), Set.copyOf(ids).size());
+    }
+
+    @Test
+    @DisplayName("Todo feed default é de uma categoria financeira")
+    void defaultFeedsMustBeFinancial() {
+        Set<String> financeiras = Set.of("economia", "mercados", "investimentos", "cripto");
+        assertTrue(registry.getAll().stream().allMatch(p -> financeiras.contains(p.getCategory())),
+                "feed 'geral' no catálogo default traria de volta esporte e entretenimento");
     }
 
     @Test
@@ -59,6 +72,9 @@ class NewsProviderRegistryTest {
         List<NewsProvider> cripto = registry.select(null, null, "cripto");
         assertTrue(cripto.stream().allMatch(p -> p.getCategory().equals("cripto")));
         assertEquals(2, cripto.size());
+
+        List<NewsProvider> investimentos = registry.select(null, "br", "investimentos");
+        assertEquals(2, investimentos.size());
 
         List<NewsProvider> criptoBr = registry.select(null, "br", "cripto");
         assertEquals(0, criptoBr.size());

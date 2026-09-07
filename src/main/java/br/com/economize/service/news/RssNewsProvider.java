@@ -7,14 +7,18 @@ import com.rometools.rome.feed.synd.SyndEntry;
 import com.rometools.rome.feed.synd.SyndFeed;
 import com.rometools.rome.io.SyndFeedInput;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.io.StringReader;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -58,36 +62,59 @@ public class RssNewsProvider implements NewsProvider {
     }
 
     @Override
-    public Flux<NewsArticle> fetch() {
+    public Mono<FeedFetchResult> fetch(String etag, String lastModified) {
         return webClient.get()
                 .uri(feed.getUrl())
+                .headers(headers -> {
+                    // GET condicional: com os validadores da última resposta boa a
+                    // fonte responde 304 sem corpo, e o parse — a parte cara numa CPU
+                    // de 0,1 — é pulado. O Last-Modified volta no formato bruto em
+                    // que veio, sem reparse de data
+                    if (etag != null) {
+                        headers.set(HttpHeaders.IF_NONE_MATCH, etag);
+                    }
+                    if (lastModified != null) {
+                        headers.set(HttpHeaders.IF_MODIFIED_SINCE, lastModified);
+                    }
+                })
                 .retrieve()
-                .bodyToMono(String.class)
+                .toEntity(String.class)
                 .timeout(timeout)
                 // parse do XML é bloqueante; sai do event loop do Netty
                 .publishOn(Schedulers.boundedElastic())
-                .flatMapMany(this::parseRss)
+                .map(this::toResult)
                 .onErrorResume(e -> {
-                    // um feed fora do ar nunca derruba o agregado
+                    // um feed fora do ar nunca derruba o agregado: quem chama
+                    // mantém a última lista boa desta fonte e tenta no próximo ciclo
                     log.warn("Erro ao buscar RSS da fonte {}: {}", feed.getId(), e.getMessage());
-                    return Flux.empty();
+                    return Mono.just(FeedFetchResult.failed());
                 });
     }
 
-    private Flux<NewsArticle> parseRss(String xml) {
-        try {
-            SyndFeedInput input = new SyndFeedInput();
-            SyndFeed syndFeed = input.build(new StringReader(xml));
+    private FeedFetchResult toResult(ResponseEntity<String> response) {
+        if (response.getStatusCode() == HttpStatus.NOT_MODIFIED) {
+            return FeedFetchResult.unchanged();
+        }
+        String xml = response.getBody();
+        if (xml == null || xml.isBlank()) {
+            // 200 sem corpo é uma fonte quebrada, não uma fonte sem notícias:
+            // tratar como falha preserva a lista anterior em vez de zerá-la
+            throw new IllegalStateException("resposta sem corpo");
+        }
+        return FeedFetchResult.updated(parseRss(xml),
+                response.getHeaders().getETag(),
+                response.getHeaders().getFirst(HttpHeaders.LAST_MODIFIED));
+    }
 
-            List<NewsArticle> articles = syndFeed.getEntries().stream()
+    private List<NewsArticle> parseRss(String xml) {
+        try {
+            SyndFeed syndFeed = new SyndFeedInput().build(new StringReader(xml));
+            return syndFeed.getEntries().stream()
                     .limit(itemsPerFeed)
                     .map(this::mapToNewsArticle)
                     .toList();
-
-            return Flux.fromIterable(articles);
         } catch (Exception e) {
-            log.warn("Erro ao fazer parse do RSS da fonte {}: {}", feed.getId(), e.getMessage());
-            return Flux.empty();
+            throw new IllegalStateException("XML inválido: " + e.getMessage(), e);
         }
     }
 
@@ -108,8 +135,11 @@ public class RssNewsProvider implements NewsProvider {
         article.setUrl(entry.getLink());
         article.setAuthor(entry.getAuthor());
 
-        if (entry.getPublishedDate() != null) {
-            article.setPublishedAt(entry.getPublishedDate().toInstant()
+        // feeds Atom só trazem <updated>; sem esta alternativa o artigo ficaria
+        // sem data e cairia para o fim da lista
+        Date published = entry.getPublishedDate() != null ? entry.getPublishedDate() : entry.getUpdatedDate();
+        if (published != null) {
+            article.setPublishedAt(published.toInstant()
                     .atZone(ZoneId.systemDefault())
                     .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
         }

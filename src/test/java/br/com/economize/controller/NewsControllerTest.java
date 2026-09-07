@@ -6,6 +6,8 @@ import br.com.economize.dto.NewsQuery;
 import br.com.economize.dto.NewsResponse;
 import br.com.economize.dto.NewsSourceInfo;
 import br.com.economize.dto.NewsSourcesResponse;
+import br.com.economize.dto.NewsTopicInfo;
+import br.com.economize.dto.NewsTopicsResponse;
 import br.com.economize.dto.Source;
 import br.com.economize.service.NewsService;
 import br.com.economize.security.JwtAuthenticationFilter;
@@ -23,6 +25,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +50,8 @@ class NewsControllerTest {
         NewsArticle article = new NewsArticle();
         article.setTitle("Mercado sobe hoje");
         article.setDescription("Bolsa de valores fecha em alta.");
+        article.setSourceCategory("mercados");
+        article.setTopics(List.of("bolsa"));
         Source source = new Source();
         source.setId("infomoney");
         source.setName("InfoMoney");
@@ -55,6 +60,7 @@ class NewsControllerTest {
         NewsResponse response = new NewsResponse();
         response.setStatus("ok");
         response.setTotalResults(1);
+        response.setUpdatedAt(Instant.parse("2026-08-14T12:00:00Z"));
         response.setArticles(List.of(article));
         return response;
     }
@@ -77,14 +83,18 @@ class NewsControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.status").isEqualTo("ok")
+                .jsonPath("$.updatedAt").isEqualTo("2026-08-14T12:00:00Z")
                 .jsonPath("$.articles[0].title").isEqualTo("Mercado sobe hoje")
-                .jsonPath("$.articles[0].source.name").isEqualTo("InfoMoney");
+                .jsonPath("$.articles[0].source.name").isEqualTo("InfoMoney")
+                .jsonPath("$.articles[0].sourceCategory").isEqualTo("mercados")
+                .jsonPath("$.articles[0].topics[0]").isEqualTo("bolsa");
 
         // categoria legada "business" não pode virar filtro real
         ArgumentCaptor<NewsQuery> captor = ArgumentCaptor.forClass(NewsQuery.class);
         verify(newsService).getTopHeadlines(captor.capture());
         assertThat(captor.getValue().category()).isNull();
         assertThat(captor.getValue().sources()).isNull();
+        assertThat(captor.getValue().topics()).isNull();
     }
 
     @Test
@@ -100,6 +110,7 @@ class NewsControllerTest {
                         .queryParam("region", "BR")
                         .queryParam("category", "cripto")
                         .queryParam("q", "Petrobras")
+                        .queryParam("topics", "Selic-CDI,tesouro")
                         .queryParam("limit", "5")
                         .build())
                 .header(HttpHeaders.AUTHORIZATION, bearerToken())
@@ -113,6 +124,8 @@ class NewsControllerTest {
         assertThat(query.region()).isEqualTo("br");
         assertThat(query.category()).isEqualTo("cripto");
         assertThat(query.q()).isEqualTo("petrobras");
+        assertThat(query.topics()).isEqualTo("selic-cdi,tesouro");
+        assertThat(query.topicIds()).containsExactly("selic-cdi", "tesouro");
         assertThat(query.limit()).isEqualTo(5);
     }
 
@@ -148,6 +161,27 @@ class NewsControllerTest {
                 .jsonPath("$.sources[0].id").isEqualTo("infomoney")
                 .jsonPath("$.sources[0].region").isEqualTo("br")
                 .jsonPath("$.sources[1].category").isEqualTo("cripto");
+    }
+
+    @Test
+    @DisplayName("GET /topics - Deve listar o vocabulário do radar com id e rótulo")
+    void shouldListTopics() {
+        when(newsService.getTopics()).thenReturn(new NewsTopicsResponse("ok", List.of(
+                new NewsTopicInfo("selic-cdi", "Selic e CDI"),
+                new NewsTopicInfo("tesouro", "Tesouro Direto"))));
+
+        webTestClient.get()
+                .uri("/api/v1/news/topics")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("ok")
+                .jsonPath("$.topics.length()").isEqualTo(2)
+                .jsonPath("$.topics[0].id").isEqualTo("selic-cdi")
+                .jsonPath("$.topics[0].label").isEqualTo("Selic e CDI")
+                .jsonPath("$.topics[1].id").isEqualTo("tesouro");
     }
 
     private String bearerToken() {

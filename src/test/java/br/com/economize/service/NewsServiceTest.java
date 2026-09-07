@@ -4,18 +4,25 @@ import br.com.economize.dto.NewsArticle;
 import br.com.economize.dto.NewsQuery;
 import br.com.economize.dto.NewsResponse;
 import br.com.economize.dto.Source;
+import br.com.economize.service.news.FeedFetchResult;
 import br.com.economize.service.news.NewsProvider;
 import br.com.economize.service.news.NewsProviderRegistry;
+import br.com.economize.service.news.NewsRefreshScheduler;
+import br.com.economize.service.news.NewsRelevanceFilter;
+import br.com.economize.service.news.NewsSnapshotStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 
@@ -23,35 +30,49 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * O serviço só filtra o que o {@link NewsSnapshotStore} já tem em memória: o
+ * store aqui é real, com dados fixos, e nenhum teste faz I/O.
+ */
 @ExtendWith(MockitoExtension.class)
 class NewsServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-08-14T12:00:00Z");
 
     @Mock
     private NewsProviderRegistry registry;
 
+    @Mock
+    private NewsRefreshScheduler refresher;
+
+    private NewsSnapshotStore store;
     private NewsService newsService;
 
     @BeforeEach
     void setUp() {
-        newsService = new NewsService(registry);
+        store = new NewsSnapshotStore(Duration.ofDays(3), Clock.fixed(NOW, ZoneOffset.UTC));
+        newsService = new NewsService(registry, store, refresher, new NewsRelevanceFilter());
     }
 
-    private static NewsArticle article(String title, String url, String publishedAt, String sourceName) {
+    private static NewsArticle article(String title, String url, String publishedAt, String sourceId,
+            String... topics) {
         NewsArticle article = new NewsArticle();
         article.setTitle(title);
         article.setDescription("Descrição de " + title);
         article.setUrl(url);
         article.setPublishedAt(publishedAt);
+        article.setTopics(List.of(topics));
         Source source = new Source();
-        source.setName(sourceName);
+        source.setId(sourceId);
+        source.setName(sourceId);
         article.setSource(source);
         return article;
     }
 
-    private static NewsProvider stubProvider(String id, String region, String category,
-            NewsArticle... articles) {
+    private static NewsProvider stubProvider(String id) {
         return new NewsProvider() {
             @Override
             public String getId() {
@@ -65,73 +86,93 @@ class NewsServiceTest {
 
             @Override
             public String getRegion() {
-                return region;
+                return "br";
             }
 
             @Override
             public String getCategory() {
-                return category;
+                return "economia";
             }
 
             @Override
-            public Flux<NewsArticle> fetch() {
-                return Flux.fromArray(articles);
+            public Mono<FeedFetchResult> fetch(String etag, String lastModified) {
+                return Mono.just(FeedFetchResult.failed());
             }
         };
     }
 
-    @Test
-    @DisplayName("Deve agregar as fontes e ordenar por data de publicação decrescente")
-    void shouldAggregateAndSortByDateDesc() {
-        NewsProvider p1 = stubProvider("fonte-a", "br", "economia",
-                article("Antiga", "https://a.test/1", "2026-08-10T08:00:00-03:00", "Fonte A"));
-        NewsProvider p2 = stubProvider("fonte-b", "br", "economia",
-                article("Recente", "https://b.test/2", "2026-08-14T09:00:00-03:00", "Fonte B"),
-                article("Sem data", "https://b.test/3", null, "Fonte B"));
+    /** Agregado padrão: três artigos de duas fontes, já classificados. */
+    private void populateStore() {
+        store.update("fonte-a", List.of(
+                article("Copom mantém Selic", "https://a.test/1", "2026-08-14T09:00:00-03:00", "fonte-a",
+                        "selic-cdi", "macro-br"),
+                article("Bitcoin renova máxima", "https://a.test/2", "2026-08-14T08:00:00-03:00", "fonte-a",
+                        "cripto")), null, null);
+        store.update("fonte-b", List.of(
+                article("PETROBRAS anuncia dividendos", "https://b.test/3", "2026-08-13T09:00:00-03:00", "fonte-b",
+                        "bolsa")), null, null);
+        store.rebuild();
+    }
 
-        when(registry.select(any(), any(), any())).thenReturn(List.of(p1, p2));
-
-        Mono<NewsResponse> result = newsService.getTopHeadlines(NewsQuery.of(null, null, null, null, null));
-
-        StepVerifier.create(result)
-                .assertNext(response -> {
-                    assertEquals("ok", response.getStatus());
-                    assertEquals(3, response.getTotalResults());
-                    assertEquals("Recente", response.getArticles().get(0).getTitle());
-                    assertEquals("Antiga", response.getArticles().get(1).getTitle());
-                    // sem data vai para o fim, sem estourar NPE na ordenação
-                    assertEquals("Sem data", response.getArticles().get(2).getTitle());
-                })
-                .verifyComplete();
+    private static NewsQuery query(String sources, String region, String category, String q, String topics,
+            Integer limit) {
+        return NewsQuery.of(sources, region, category, q, topics, limit);
     }
 
     @Test
-    @DisplayName("Deve deduplicar artigos pelo link")
-    void shouldDeduplicateByLink() {
-        String sharedUrl = "https://agencia.test/materia";
-        NewsProvider p1 = stubProvider("fonte-a", "br", "economia",
-                article("Matéria original", sharedUrl, "2026-08-14T09:00:00-03:00", "Fonte A"));
-        NewsProvider p2 = stubProvider("fonte-b", "br", "economia",
-                article("Matéria replicada", sharedUrl, "2026-08-14T10:00:00-03:00", "Fonte B"));
+    @DisplayName("Deve responder do agregado em memória, ordenado por data, sem disparar refresh")
+    void shouldServeFromStoreWithoutRefreshing() {
+        populateStore();
 
-        when(registry.select(any(), any(), any())).thenReturn(List.of(p1, p2));
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, null, null)))
+                .assertNext(response -> {
+                    assertEquals("ok", response.getStatus());
+                    assertEquals(3, response.getTotalResults());
+                    assertEquals("Copom mantém Selic", response.getArticles().get(0).getTitle());
+                    assertEquals("Bitcoin renova máxima", response.getArticles().get(1).getTitle());
+                    assertEquals("PETROBRAS anuncia dividendos", response.getArticles().get(2).getTitle());
+                    assertEquals(NOW, response.getUpdatedAt());
+                })
+                .verifyComplete();
 
-        StepVerifier.create(newsService.getTopHeadlines(NewsQuery.of(null, null, null, null, null)))
-                .assertNext(response -> assertEquals(1, response.getTotalResults()))
+        verifyNoInteractions(refresher);
+        // sem filtro de fonte o registry nem é consultado
+        verifyNoInteractions(registry);
+    }
+
+    @Test
+    @DisplayName("Deve filtrar por tópicos do vocabulário e ignorar ids desconhecidos")
+    void shouldFilterByTopics() {
+        populateStore();
+
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, "cripto,bolsa", null)))
+                .assertNext(response -> {
+                    assertEquals(2, response.getTotalResults());
+                    assertEquals("Bitcoin renova máxima", response.getArticles().get(0).getTitle());
+                    assertEquals("PETROBRAS anuncia dividendos", response.getArticles().get(1).getTitle());
+                })
+                .verifyComplete();
+
+        // id desconhecido sozinho não pode virar lista vazia: é ignorado
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, "nao-existe", null)))
+                .assertNext(response -> assertEquals(3, response.getTotalResults()))
+                .verifyComplete();
+
+        // misturado com um conhecido, só o conhecido filtra
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, "nao-existe,selic-cdi", null)))
+                .assertNext(response -> {
+                    assertEquals(1, response.getTotalResults());
+                    assertEquals("Copom mantém Selic", response.getArticles().get(0).getTitle());
+                })
                 .verifyComplete();
     }
 
     @Test
     @DisplayName("Deve filtrar por texto (q) em título e descrição, sem case")
     void shouldFilterByTextQuery() {
-        NewsProvider p1 = stubProvider("fonte-a", "br", "economia",
-                article("PETROBRAS anuncia dividendos", "https://a.test/1", "2026-08-14T09:00:00-03:00",
-                        "Fonte A"),
-                article("Vale despenca", "https://a.test/2", "2026-08-14T08:00:00-03:00", "Fonte A"));
+        populateStore();
 
-        when(registry.select(any(), any(), any())).thenReturn(List.of(p1));
-
-        StepVerifier.create(newsService.getTopHeadlines(NewsQuery.of(null, null, null, "petrobras", null)))
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, "petrobras", null, null)))
                 .assertNext(response -> {
                     assertEquals(1, response.getTotalResults());
                     assertEquals("PETROBRAS anuncia dividendos", response.getArticles().get(0).getTitle());
@@ -142,83 +183,100 @@ class NewsServiceTest {
     @Test
     @DisplayName("Deve limitar a quantidade de artigos quando limit for informado")
     void shouldLimitResults() {
-        NewsProvider p1 = stubProvider("fonte-a", "br", "economia",
-                article("Um", "https://a.test/1", "2026-08-14T09:00:00-03:00", "Fonte A"),
-                article("Dois", "https://a.test/2", "2026-08-14T08:00:00-03:00", "Fonte A"),
-                article("Três", "https://a.test/3", "2026-08-14T07:00:00-03:00", "Fonte A"));
+        populateStore();
 
-        when(registry.select(any(), any(), any())).thenReturn(List.of(p1));
-
-        StepVerifier.create(newsService.getTopHeadlines(NewsQuery.of(null, null, null, null, 2)))
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, null, 2)))
                 .assertNext(response -> {
                     assertEquals(2, response.getTotalResults());
-                    assertEquals("Um", response.getArticles().get(0).getTitle());
+                    assertEquals("Copom mantém Selic", response.getArticles().get(0).getTitle());
                 })
                 .verifyComplete();
     }
 
     @Test
-    @DisplayName("Deve repassar os filtros de seleção de fontes ao registry")
+    @DisplayName("Filtros de fonte passam pelo registry e restringem o agregado aos ids selecionados")
     void shouldDelegateSourceSelectionToRegistry() {
-        when(registry.select(any(), any(), any())).thenReturn(List.of());
+        populateStore();
+        when(registry.select(any(), any(), any())).thenReturn(List.of(stubProvider("fonte-b")));
 
         StepVerifier.create(newsService
-                .getTopHeadlines(NewsQuery.of("infomoney, g1-economia", "BR", "cripto", null, null)))
-                .assertNext(response -> assertEquals(0, response.getTotalResults()))
+                .getTopHeadlines(query("fonte-b, fonte-a", "BR", "cripto", null, null, null)))
+                .assertNext(response -> {
+                    assertEquals(1, response.getTotalResults());
+                    assertEquals("fonte-b", response.getArticles().get(0).getSource().getId());
+                })
                 .verifyComplete();
 
-        verify(registry).select(Set.of("infomoney", "g1-economia"), "br", "cripto");
+        verify(registry).select(Set.of("fonte-b", "fonte-a"), "br", "cripto");
     }
 
     @Test
     @DisplayName("Categoria do contrato antigo (ex.: business) segue aceita e ignorada")
     void legacyCategoryShouldBeIgnored() {
-        NewsQuery query = NewsQuery.of(null, null, "business", null, null);
+        NewsQuery query = query(null, null, "business", null, null, null);
         assertNull(query.category(), "categoria legada não pode virar filtro");
 
-        NewsQuery blank = NewsQuery.of(" ", "", "  ", null, 0);
+        NewsQuery blank = query(" ", "", "  ", null, " ", 0);
         assertNull(blank.sources());
         assertNull(blank.region());
         assertNull(blank.category());
+        assertNull(blank.topics());
         assertNull(blank.limit());
     }
 
     @Test
-    @DisplayName("Falha catastrófica deve devolver resposta vazia bem formada")
-    void shouldReturnEmptyResponseOnCatastrophicFailure() {
-        NewsProvider broken = new NewsProvider() {
-            @Override
-            public String getId() {
-                return "quebrada";
-            }
+    @DisplayName("Boot frio: dispara o refresh, espera por ele e responde o que ele trouxe")
+    void coldStartShouldTriggerRefreshAndWait() {
+        when(refresher.refreshNow()).thenReturn(Mono.<Void>fromRunnable(this::populateStore));
 
-            @Override
-            public String getName() {
-                return "Quebrada";
-            }
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, null, null)))
+                .assertNext(response -> {
+                    assertEquals(3, response.getTotalResults());
+                    assertEquals(NOW, response.getUpdatedAt());
+                })
+                .verifyComplete();
 
-            @Override
-            public String getRegion() {
-                return "br";
-            }
+        verify(refresher).refreshNow();
+    }
 
-            @Override
-            public String getCategory() {
-                return "economia";
-            }
+    @Test
+    @DisplayName("Boot frio: se o refresh não terminar em 3 s responde vazio, sem travar a tela")
+    void coldStartShouldGiveUpWaitingAfterThreeSeconds() {
+        when(refresher.refreshNow()).thenReturn(Mono.never());
 
-            @Override
-            public Flux<NewsArticle> fetch() {
-                return Flux.error(new RuntimeException("estouro inesperado"));
-            }
-        };
-        when(registry.select(any(), any(), any())).thenReturn(List.of(broken));
+        StepVerifier.withVirtualTime(() -> newsService.getTopHeadlines(query(null, null, null, null, null, null)))
+                .expectSubscription()
+                .expectNoEvent(Duration.ofSeconds(2))
+                .thenAwait(NewsService.COLD_START_WAIT)
+                .assertNext(response -> {
+                    assertEquals("ok", response.getStatus());
+                    assertEquals(0, response.getTotalResults());
+                    assertNull(response.getUpdatedAt(), "nenhum ciclo terminou: o app precisa saber disso");
+                })
+                .verifyComplete();
+    }
 
-        StepVerifier.create(newsService.getTopHeadlines(NewsQuery.of(null, null, null, null, null)))
+    @Test
+    @DisplayName("Boot frio: erro no refresh não vira erro para o usuário")
+    void coldStartShouldSwallowRefreshError() {
+        when(refresher.refreshNow()).thenReturn(Mono.error(new IllegalStateException("estouro inesperado")));
+
+        StepVerifier.create(newsService.getTopHeadlines(query(null, null, null, null, null, null)))
                 .assertNext(response -> {
                     assertEquals("ok", response.getStatus());
                     assertEquals(0, response.getTotalResults());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("GET /topics deve expor o vocabulário fixo do radar")
+    void shouldExposeTopicVocabulary() {
+        var topics = newsService.getTopics();
+
+        assertEquals("ok", topics.status());
+        assertEquals(13, topics.topics().size());
+        assertEquals("selic-cdi", topics.topics().get(0).id());
+        assertEquals("Selic e CDI", topics.topics().get(0).label());
     }
 }

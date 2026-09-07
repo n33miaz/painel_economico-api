@@ -2,6 +2,7 @@ package br.com.economize.config;
 
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.resolver.DefaultAddressResolverGroup;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +18,13 @@ import reactor.netty.http.client.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Todos os {@code HttpClient} daqui usam o resolvedor de DNS da JVM
+ * ({@link DefaultAddressResolverGroup}) em vez do resolvedor assíncrono próprio
+ * do Netty. O do Netty lê o resolv.conf e conversa direto com o servidor DNS, e
+ * em alguns containers (o do Render entre eles) isso falha ou trava onde a JVM,
+ * que usa o resolvedor do sistema, resolve normalmente.
+ */
 @Configuration
 public class WebClientConfig {
 
@@ -25,6 +33,7 @@ public class WebClientConfig {
     @SuppressWarnings("null")
     public WebClient webClient(WebClient.Builder builder) {
         HttpClient httpClient = HttpClient.create()
+                .resolver(DefaultAddressResolverGroup.INSTANCE)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
                 .responseTimeout(Duration.ofSeconds(5))
                 .doOnConnected(conn -> conn
@@ -39,15 +48,21 @@ public class WebClientConfig {
     }
 
     /**
-     * WebClient dedicado a feeds RSS. Feeds grandes (G1 ~630 KB, CNN ~490 KB,
-     * InvestNews ~290 KB) estouram o limite padrão de 256 KB do codec
+     * WebClient dedicado a feeds RSS. Feeds grandes (G1 ~620 KB, Valor Investe
+     * ~500 KB, InvestNews ~320 KB) estouram o limite padrão de 256 KB do codec
      * (DataBufferLimitException); o limite maior fica isolado aqui para não
      * afrouxar o cliente usado pelas demais integrações.
+     *
+     * <p>Pede compressão ({@code compress(true)}): esses mesmos feeds saem com
+     * gzip em ~100 KB, e na CPU de 0,1 do plano free é a diferença entre baixar
+     * o catálogo inteiro no ciclo e estourar timeout em todos ao mesmo tempo.
      */
     @Bean
     @SuppressWarnings("null")
     public WebClient rssWebClient(WebClient.Builder builder) {
         HttpClient httpClient = HttpClient.create()
+                .resolver(DefaultAddressResolverGroup.INSTANCE)
+                .compress(true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
                 .followRedirect(true)
                 .responseTimeout(Duration.ofSeconds(10))
@@ -84,6 +99,7 @@ public class WebClientConfig {
     @SuppressWarnings("null")
     public WebClient pluggyWebClient(WebClient.Builder builder) {
         HttpClient httpClient = HttpClient.create()
+                .resolver(DefaultAddressResolverGroup.INSTANCE)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
                 .responseTimeout(Duration.ofSeconds(30))
                 .doOnConnected(conn -> conn
@@ -117,6 +133,7 @@ public class WebClientConfig {
     @SuppressWarnings("null")
     public WebClient aiWebClient(WebClient.Builder builder) {
         HttpClient httpClient = HttpClient.create()
+                .resolver(DefaultAddressResolverGroup.INSTANCE)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
                 .responseTimeout(Duration.ofSeconds(90))
                 .doOnConnected(conn -> conn
@@ -134,4 +151,4 @@ public class WebClientConfig {
     public RestClient.Builder restClientBuilder() {
         return RestClient.builder();
     }
-}
+}

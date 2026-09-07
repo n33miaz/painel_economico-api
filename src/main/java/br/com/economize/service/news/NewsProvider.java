@@ -1,7 +1,6 @@
 package br.com.economize.service.news;
 
-import br.com.economize.dto.NewsArticle;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Fonte de notícias plugável. O agregado não conhece RSS nem HTTP: qualquer
@@ -17,9 +16,17 @@ public interface NewsProvider {
     /** Região da fonte: "br" ou "global". */
     String getRegion();
 
-    /** Categoria editorial: economia, mercados, cripto, tecnologia, geral... */
+    /** Categoria editorial: economia, mercados, investimentos, cripto, geral... */
     String getCategory();
 
-    /** Artigos mais recentes da fonte. Nunca deve propagar erro: falha => Flux vazio. */
-    Flux<NewsArticle> fetch();
+    /**
+     * Busca os artigos mais recentes da fonte. Recebe os validadores HTTP da
+     * última resposta boa (ETag e Last-Modified, qualquer um pode ser null) para
+     * fazer GET condicional: se a fonte responder que nada mudou, o resultado é
+     * UNCHANGED e ninguém gasta CPU parseando XML de novo.
+     *
+     * <p>Nunca deve propagar erro: falha de rede, timeout ou XML inválido viram
+     * {@link FeedFetchResult#failed()}, e quem chama preserva a última lista boa.
+     */
+    Mono<FeedFetchResult> fetch(String etag, String lastModified);
 }
