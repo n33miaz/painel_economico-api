@@ -8,6 +8,8 @@ import br.com.economize.model.BankTransaction;
 import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
+import br.com.economize.service.DuplicateTransactionService;
+import br.com.economize.service.InternalTransferService;
 import br.com.economize.service.TransactionAliasService;
 import br.com.economize.service.TransactionReviewService;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -52,6 +55,29 @@ class TransactionControllerTest {
 
     @MockitoBean
     private TransactionAliasService aliasService;
+
+    @MockitoBean
+    private InternalTransferService internalTransferService;
+
+    @MockitoBean
+    private DuplicateTransactionService duplicateService;
+
+    @Test
+    @DisplayName("GET /review/count - só a contagem, sem baixar a fila")
+    void reviewCountReturnsOnlyTheNumber() {
+        when(reviewService.pendingCount(EMAIL)).thenReturn(1656L);
+
+        webTestClient.get()
+                .uri("/api/v1/transactions/review/count")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.count").isEqualTo(1656);
+
+        // a fila agrupada não é consultada: é o ganho inteiro do endpoint
+        verify(reviewService, never()).reviewQueue(any(), any());
+    }
 
     @Test
     @DisplayName("PATCH /{id}/alias - Apelido vira a descrição exibida e o nome do banco continua no payload")

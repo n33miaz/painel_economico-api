@@ -9,6 +9,8 @@ import br.com.economize.repository.BankTransactionRepository;
 import br.com.economize.repository.CategoryRepository;
 import br.com.economize.repository.CategoryRuleRepository;
 import br.com.economize.repository.UserRepository;
+import br.com.economize.service.statement.category.AiCategorySuggester;
+import br.com.economize.service.statement.category.CategorizationEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
@@ -51,6 +54,12 @@ class TransactionReviewServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private CategorizationEngine categorizationEngine;
+
+    @Mock
+    private org.springframework.beans.factory.ObjectProvider<AiCategorySuggester> aiSuggester;
 
     @InjectMocks
     private TransactionReviewService service;
@@ -236,6 +245,194 @@ class TransactionReviewServiceTest {
                 .flow(Category.Flow.EXPENSE).archived(false).build();
 
         assertThat(TransactionReviewService.legacyKey(custom)).isEqualTo("a".repeat(32));
+    }
+
+
+    @Test
+    @DisplayName("Recategorizar dá sugestão ao que o motor hoje sabe resolver")
+    void recategorizeResolvesWhatTheEngineNowKnows() {
+        BankTransaction semCategoria = pendingTx("ifd food acai ltda");
+        semCategoria.setReviewStatus(BankTransaction.ReviewStatus.UNCATEGORIZED);
+        semCategoria.setCategoryId(null);
+        semCategoria.setCategory(null);
+        semCategoria.setCategorizedBy(null);
+
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of(semCategoria));
+        // Context dublado é irrelevante: quem o lê é o motor, que aqui é mock
+        when(categorizationEngine.contextFor(user.getId())).thenReturn(null);
+        when(categorizationEngine.categorize(any(), any(), any(), eq(false)))
+                .thenReturn(new CategorizationEngine.Result(
+                        food, BankTransaction.CategorizedBy.KEYWORD, new BigDecimal("0.70"), "ifd food acai ltda"));
+
+        TransactionReviewService.RecategorizeOutcome outcome = service.recategorizePending(EMAIL);
+
+        assertThat(outcome.reviewed()).isEqualTo(1);
+        assertThat(outcome.resolved()).isEqualTo(1);
+        assertThat(outcome.stillPending()).isZero();
+        // Contexto montado UMA vez, e não por transação: com 253 pendentes
+        // seriam 253 leituras de regras e categorias do banco
+        verify(categorizationEngine, times(1)).contextFor(user.getId());
+        // SUGGESTED, e não CONFIRMED: o motor sugere, quem confirma é o usuário
+        assertThat(semCategoria.getReviewStatus()).isEqualTo(BankTransaction.ReviewStatus.SUGGESTED);
+        assertThat(semCategoria.getCategoryId()).isEqualTo(food.getId());
+        assertThat(semCategoria.getCategory()).isEqualTo("FOOD");
+        verify(bankTransactionRepository).saveAll(List.of(semCategoria));
+    }
+
+    @Test
+    @DisplayName("Recategorizar não conta de novo quem já tinha a mesma sugestão")
+    void recategorizeIgnoresUnchangedSuggestions() {
+        BankTransaction jaSugerida = pendingTx("ifood rest");
+        jaSugerida.setCategoryId(food.getId());
+        jaSugerida.setCategory("FOOD");
+
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of(jaSugerida));
+        // Context dublado é irrelevante: quem o lê é o motor, que aqui é mock
+        when(categorizationEngine.contextFor(user.getId())).thenReturn(null);
+        when(categorizationEngine.categorize(any(), any(), any(), eq(false)))
+                .thenReturn(new CategorizationEngine.Result(
+                        food, BankTransaction.CategorizedBy.KEYWORD, new BigDecimal("0.70"), "ifood rest"));
+
+        TransactionReviewService.RecategorizeOutcome outcome = service.recategorizePending(EMAIL);
+
+        assertThat(outcome.resolved()).isZero();
+        // nada mudou: gravar seria escrita inútil no banco
+        verify(bankTransactionRepository, never()).saveAll(anyCollection());
+    }
+
+    @Test
+    @DisplayName("Recategorizar deixa em paz o que o motor continua sem saber")
+    void recategorizeLeavesUnknownAlone() {
+        BankTransaction desconhecida = pendingTx("click machine sao paulo bra");
+        desconhecida.setReviewStatus(BankTransaction.ReviewStatus.UNCATEGORIZED);
+        desconhecida.setCategoryId(null);
+
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of(desconhecida));
+        // Context dublado é irrelevante: quem o lê é o motor, que aqui é mock
+        when(categorizationEngine.contextFor(user.getId())).thenReturn(null);
+        when(categorizationEngine.categorize(any(), any(), any(), eq(false)))
+                .thenReturn(new CategorizationEngine.Result(null, null, null, "click machine sao paulo bra"));
+
+        TransactionReviewService.RecategorizeOutcome outcome = service.recategorizePending(EMAIL);
+
+        assertThat(outcome.reviewed()).isEqualTo(1);
+        assertThat(outcome.resolved()).isZero();
+        assertThat(outcome.stillPending()).isEqualTo(1);
+        assertThat(desconhecida.getReviewStatus())
+                .isEqualTo(BankTransaction.ReviewStatus.UNCATEGORIZED);
+        verify(bankTransactionRepository, never()).saveAll(anyCollection());
+    }
+
+    @Test
+    @DisplayName("Fila vazia não chama o motor")
+    void recategorizeWithEmptyQueueDoesNothing() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of());
+
+        TransactionReviewService.RecategorizeOutcome outcome = service.recategorizePending(EMAIL);
+
+        assertThat(outcome.reviewed()).isZero();
+        verifyNoInteractions(categorizationEngine);
+    }
+
+
+    @Test
+    @DisplayName("Sem IA na conta, o recategorizar termina no vocabulário")
+    void recategorizeWithoutAiStopsAtTheVocabulary() {
+        BankTransaction desconhecida = pendingTx("click machine sao paulo bra");
+        desconhecida.setReviewStatus(BankTransaction.ReviewStatus.UNCATEGORIZED);
+        desconhecida.setCategoryId(null);
+
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of(desconhecida));
+        when(categorizationEngine.contextFor(user.getId())).thenReturn(null);
+        when(categorizationEngine.categorize(any(), any(), any(), eq(false)))
+                .thenReturn(new CategorizationEngine.Result(null, null, null, "click machine"));
+        // instalação sem IA: o bean simplesmente não está disponível
+        when(aiSuggester.getIfAvailable()).thenReturn(null);
+
+        TransactionReviewService.RecategorizeOutcome out = service.recategorizePending(EMAIL);
+
+        assertThat(out.resolvedByAi()).isZero();
+        assertThat(out.stillPending()).isEqualTo(1);
+        // e nem chegou a montar o catálogo: sem IA, essa consulta seria dinheiro
+        // jogado fora em toda recategorização de quem nunca ligou o recurso
+        verify(categoryRepository, never()).findVisibleTo(any());
+    }
+
+    @Test
+    @DisplayName("Com IA, o que o vocabulário não soube vai ao modelo — e volta como SUGERIDA")
+    void recategorizeEscalatesLeftoversToAi() {
+        BankTransaction desconhecida = pendingTx("ke coxinha barueri");
+        desconhecida.setReviewStatus(BankTransaction.ReviewStatus.UNCATEGORIZED);
+        desconhecida.setCategoryId(null);
+
+        AiCategorySuggester suggester = org.mockito.Mockito.mock(AiCategorySuggester.class);
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of(desconhecida));
+        when(categorizationEngine.contextFor(user.getId())).thenReturn(null);
+        when(categorizationEngine.categorize(any(), any(), any(), eq(false)))
+                .thenReturn(new CategorizationEngine.Result(null, null, null, "ke coxinha barueri"));
+        when(aiSuggester.getIfAvailable()).thenReturn(suggester);
+        when(suggester.appliesTo(user)).thenReturn(true);
+        when(categoryRepository.findVisibleTo(user.getId())).thenReturn(List.of(food));
+        when(suggester.suggest(eq(user), eq(List.of("ke coxinha barueri")), anyList()))
+                .thenReturn(java.util.Map.of("ke coxinha barueri", food.getSlug()));
+
+        TransactionReviewService.RecategorizeOutcome out = service.recategorizePending(EMAIL);
+
+        assertThat(out.resolvedByAi()).isEqualTo(1);
+        assertThat(out.resolved()).isEqualTo(1);
+        assertThat(out.stillPending()).isZero();
+        assertThat(desconhecida.getCategoryId()).isEqualTo(food.getId());
+        // SUGERIDA e marcada como IA: o modelo erra com confiança, e o chip da
+        // revisão precisa dizer de onde veio o palpite
+        assertThat(desconhecida.getReviewStatus())
+                .isEqualTo(BankTransaction.ReviewStatus.SUGGESTED);
+        assertThat(desconhecida.getCategorizedBy()).isEqualTo(BankTransaction.CategorizedBy.AI);
+        verify(bankTransactionRepository).saveAll(List.of(desconhecida));
+    }
+
+    @Test
+    @DisplayName("A IA não é consultada sobre o que o vocabulário já resolveu")
+    void aiOnlySeesWhatTheVocabularyCouldNotAnswer() {
+        BankTransaction resolvida = pendingTx("ifd food acai ltda");
+        resolvida.setReviewStatus(BankTransaction.ReviewStatus.UNCATEGORIZED);
+        resolvida.setCategoryId(null);
+
+        AiCategorySuggester suggester = org.mockito.Mockito.mock(AiCategorySuggester.class);
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(bankTransactionRepository
+                .findAllByUserIdAndReviewStatusInOrderByDateDesc(eq(user.getId()), anyCollection()))
+                .thenReturn(List.of(resolvida));
+        when(categorizationEngine.contextFor(user.getId())).thenReturn(null);
+        when(categorizationEngine.categorize(any(), any(), any(), eq(false)))
+                .thenReturn(new CategorizationEngine.Result(
+                        food, BankTransaction.CategorizedBy.KEYWORD, new BigDecimal("0.70"), "ifd food acai"));
+        when(aiSuggester.getIfAvailable()).thenReturn(suggester);
+
+        TransactionReviewService.RecategorizeOutcome out = service.recategorizePending(EMAIL);
+
+        assertThat(out.resolved()).isEqualTo(1);
+        assertThat(out.resolvedByAi()).isZero();
+        // o modelo cobra por chamada: perguntar o que a keyword já respondeu
+        // seria pagar duas vezes pela mesma linha
+        verify(suggester, never()).suggest(any(), anyList(), anyList());
     }
 
     private ReviewApplyRequest request(List<UUID> transactionIds, UUID categoryId, Boolean learnPattern) {
