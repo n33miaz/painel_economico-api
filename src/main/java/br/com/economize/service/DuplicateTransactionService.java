@@ -13,6 +13,8 @@ import java.math.BigDecimal;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -62,6 +64,9 @@ public class DuplicateTransactionService {
      * a comparação precisa dizer.
      */
     private static final long JANELA_DIAS = 1;
+
+    /** Ver {@link #falamDoMesmo}: duas palavras de três letras ou mais. */
+    private static final int MIN_PALAVRAS_EM_COMUM = 2;
 
     private final BankTransactionRepository bankTransactionRepository;
     private final UserRepository userRepository;
@@ -117,7 +122,7 @@ public class DuplicateTransactionService {
                 for (BankTransaction arquivo : semConta) {
                     long dias = Math.abs(ChronoUnit.DAYS.between(
                             conector.getDate().toLocalDate(), arquivo.getDate().toLocalDate()));
-                    if (dias <= JANELA_DIAS) {
+                    if (dias <= JANELA_DIAS && falamDoMesmo(conector, arquivo)) {
                         par = arquivo;
                         break;
                     }
@@ -143,6 +148,41 @@ public class DuplicateTransactionService {
         log.info("Varredura de duplicatas: {} par(es), volume {}, dryRun={}, user={}",
                 pares.size(), volume, dryRun, email);
         return new Outcome(all.size(), pares.size(), volume, dryRun, pares);
+    }
+
+    /**
+     * As duas linhas descrevem o MESMO fato?
+     *
+     * <p>Valor idêntico e um dia de diferença não bastam, e isso foi medido: no
+     * extrato do dono, 03 e 04/06 têm <b>duas</b> saídas de R$ 416,78 do lado do
+     * arquivo — "Pagamento de fatura" e "Pix enviado - Neemias Cormino Manso",
+     * que são as duas pernas do mesmo dinheiro, não a mesma linha. Rodando a
+     * varredura de novo depois de marcar o par certo, a linha da conexão sobrava
+     * e casava com a perna errada.
+     *
+     * <p>O critério é <b>duas palavras de três letras ou mais em comum</b>. As
+     * duas fontes escrevem o mesmo lançamento de jeitos diferentes ("Pix
+     * enviado: Cp :54811417-PUSHINPAY" e "Pix enviado - Pushinpay"), mas sempre
+     * com o mesmo começo; e "pagamento de fatura" contra "pix enviado neemias"
+     * não compartilha nada com três letras — "de" não conta, e é por isso que o
+     * piso é de três.
+     */
+    private boolean falamDoMesmo(BankTransaction a, BankTransaction b) {
+        Set<String> tokensA = tokens(a.getDescription());
+        if (tokensA.isEmpty()) return false;
+        int comuns = 0;
+        for (String token : tokens(b.getDescription())) {
+            if (tokensA.contains(token) && ++comuns >= MIN_PALAVRAS_EM_COMUM) return true;
+        }
+        return false;
+    }
+
+    private Set<String> tokens(String descricao) {
+        Set<String> tokens = new LinkedHashSet<>();
+        for (String pedaco : CounterpartyMatcher.normalize(descricao).split(" ")) {
+            if (pedaco.length() >= 3) tokens.add(pedaco);
+        }
+        return tokens;
     }
 
     private User requireUser(String email) {

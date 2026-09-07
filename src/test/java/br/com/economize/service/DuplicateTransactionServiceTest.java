@@ -231,4 +231,34 @@ class DuplicateTransactionServiceTest {
 
         assertThat(resultado.pairs()).isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("mesmo valor e mesmo dia, mas falando de coisas diferentes, não é duplicata")
+    void shouldNotPairLinesThatDescribeDifferentFacts() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        // Medido na produção: 03 e 04/06 têm duas saídas de R$ 416,78 do lado do
+        // arquivo — as duas pernas do mesmo dinheiro, não a mesma linha
+        BankTransaction conexao = tx("-416.78", OffsetDateTime.parse("2026-06-03T00:00:00Z"),
+                UUID.randomUUID(), "Pagamento de fatura");
+        BankTransaction outraPerna = tx("-416.78", OffsetDateTime.parse("2026-06-04T00:00:00Z"),
+                null, "Pix enviado  - Neemias Cormino Manso");
+        when(bankTransactionRepository.findAllByUserIdOrderByDateDesc(user.getId()))
+                .thenReturn(List.of(outraPerna, conexao));
+
+        assertThat(service.sweep(EMAIL, true).pairs()).isZero();
+    }
+
+    @Test
+    @DisplayName("as duas fontes escrevem diferente, e ainda assim é a mesma linha")
+    void shouldPairThroughDifferentWordingOfTheSameLine() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        BankTransaction conexao = tx("-8.90", OffsetDateTime.parse("2026-07-08T00:00:00Z"),
+                UUID.randomUUID(), "Pix enviado: \"Cp :54811417-PUSHINPAY\"");
+        BankTransaction arquivo = tx("-8.90", OffsetDateTime.parse("2026-07-09T00:00:00Z"),
+                null, "Pix enviado  - Pushinpay");
+        when(bankTransactionRepository.findAllByUserIdOrderByDateDesc(user.getId()))
+                .thenReturn(List.of(arquivo, conexao));
+
+        assertThat(service.sweep(EMAIL, true).pairs()).isEqualTo(1);
+    }
 }
