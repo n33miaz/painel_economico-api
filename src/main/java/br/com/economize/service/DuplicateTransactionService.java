@@ -10,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,10 +50,18 @@ import java.util.UUID;
 public class DuplicateTransactionService {
 
     /**
-     * Janela do pareamento. Um dia, e não dois: com dois, um salário creditado
-     * na segunda e um Pix igual na quarta viram "duplicata".
+     * Janela do pareamento, em DIAS DE CALENDÁRIO. Um dia, e não dois: com dois,
+     * um salário creditado na segunda e um Pix igual na quarta viram "duplicata".
+     *
+     * <p><b>Dia de calendário e não 24 horas</b>, e a diferença não é acadêmica:
+     * medido na produção em 07/09/2026, o par de R$ 2.625,72 tem o lado da
+     * conexão em 03/06 às 00:00 e o lado do arquivo em 04/06 às 00:05 — 24 h e
+     * 5 min. Com a janela em duração, os 18 pares medidos viravam ZERO por causa
+     * de cinco minutos que só existem porque cada importador carimba a hora de um
+     * jeito. "Um dia de diferença" é o que a pessoa lê no extrato, e é isso que
+     * a comparação precisa dizer.
      */
-    private static final Duration JANELA = Duration.ofDays(1);
+    private static final long JANELA_DIAS = 1;
 
     private final BankTransactionRepository bankTransactionRepository;
     private final UserRepository userRepository;
@@ -82,11 +90,17 @@ public class DuplicateTransactionService {
                 .findAllByUserIdOrderByDateDesc(user.getId());
 
         // Agrupa por valor exato: só quem tem o mesmo valor pode ser par, e isso
-        // reduz a comparação de N² para a soma dos quadrados de grupos pequenos
+        // reduz a comparação de N² para a soma dos quadrados de grupos pequenos.
+        //
+        // A chave passa por stripTrailingZeros porque BigDecimal.equals compara
+        // a ESCALA: R$ 320,57 gravado como 320.5700 pelo conector e como 320.57
+        // pelo leitor de arquivo são valores iguais e chaves diferentes, e cada
+        // um cairia no seu próprio balde — justamente os dois lados que este
+        // serviço existe para juntar.
         Map<BigDecimal, List<BankTransaction>> porValor = new LinkedHashMap<>();
         for (BankTransaction tx : all) {
             if (tx.isIgnored()) continue;
-            porValor.computeIfAbsent(tx.getAmount(), k -> new ArrayList<>()).add(tx);
+            porValor.computeIfAbsent(tx.getAmount().stripTrailingZeros(), k -> new ArrayList<>()).add(tx);
         }
 
         List<Pair> pares = new ArrayList<>();
@@ -101,8 +115,9 @@ public class DuplicateTransactionService {
             for (BankTransaction conector : comConta) {
                 BankTransaction par = null;
                 for (BankTransaction arquivo : semConta) {
-                    Duration diff = Duration.between(conector.getDate(), arquivo.getDate()).abs();
-                    if (diff.compareTo(JANELA) <= 0) {
+                    long dias = Math.abs(ChronoUnit.DAYS.between(
+                            conector.getDate().toLocalDate(), arquivo.getDate().toLocalDate()));
+                    if (dias <= JANELA_DIAS) {
                         par = arquivo;
                         break;
                     }

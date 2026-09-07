@@ -193,4 +193,42 @@ class DuplicateTransactionServiceTest {
         assertThat(linha.isIgnored()).isFalse();
         assertThat(linha.getIgnoredReason()).isNull();
     }
+
+    @Test
+    @DisplayName("um dia de diferença com horas diferentes ainda é um dia (o par de R$ 2.625,72)")
+    void shouldPairAcrossCalendarDayEvenWithDifferentClockTimes() {
+        // Medido na produção: o lado da conexão chega às 00:00 e o lado do
+        // arquivo às 00:05 do dia seguinte — 24 h e 5 min. Com janela de
+        // duração, os 18 pares reais viravam zero por causa de cinco minutos
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        BankTransaction conexao = tx("-2625.72", OffsetDateTime.parse("2026-06-03T00:00:00Z"),
+                UUID.randomUUID(), "Pagamento efetuado: Pagamento fatura cartao Inter");
+        BankTransaction arquivo = tx("-2625.72", OffsetDateTime.parse("2026-06-04T00:05:12Z"),
+                null, "Pagamento efetuado - Pagamento Fatura");
+        when(bankTransactionRepository.findAllByUserIdOrderByDateDesc(user.getId()))
+                .thenReturn(List.of(arquivo, conexao));
+
+        DuplicateTransactionService.Outcome resultado = service.sweep(EMAIL, true);
+
+        assertThat(resultado.pairs()).isEqualTo(1);
+        assertThat(resultado.details().get(0).ignoredId()).isEqualTo(arquivo.getId());
+    }
+
+    @Test
+    @DisplayName("mesma quantia com escalas diferentes é o mesmo valor")
+    void shouldPairAmountsWrittenWithDifferentScales() {
+        // O conector grava 320.5700 e o leitor de arquivo grava 320.57: iguais
+        // para quem lê, diferentes para BigDecimal.equals
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        BankTransaction conexao = tx("-320.5700", OffsetDateTime.parse("2026-09-13T00:00:00Z"),
+                UUID.randomUUID(), "Mercado Livre parcela 2/2");
+        BankTransaction arquivo = tx("-320.57", OffsetDateTime.parse("2026-09-13T03:00:00Z"),
+                null, "Mercado Livre - compra parcelada");
+        when(bankTransactionRepository.findAllByUserIdOrderByDateDesc(user.getId()))
+                .thenReturn(List.of(arquivo, conexao));
+
+        DuplicateTransactionService.Outcome resultado = service.sweep(EMAIL, true);
+
+        assertThat(resultado.pairs()).isEqualTo(1);
+    }
 }
