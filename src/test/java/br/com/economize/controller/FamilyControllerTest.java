@@ -13,6 +13,7 @@ import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
 import br.com.economize.service.family.FamilyAnalyticsService;
+import br.com.economize.service.family.FamilyTransferService;
 import br.com.economize.service.family.FamilyService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -65,6 +66,9 @@ class FamilyControllerTest {
 
     @MockitoBean
     private FamilyAnalyticsService familyAnalyticsService;
+
+    @MockitoBean
+    private FamilyTransferService familyTransferService;
 
     private final UUID groupId = UUID.randomUUID();
     private final UUID memberId = UUID.randomUUID();
@@ -431,5 +435,23 @@ class FamilyControllerTest {
 
     private String bearerToken() {
         return "Bearer " + jwtUtil.generateToken(EMAIL);
+    }
+
+    @Test
+    @DisplayName("POST /family/reconcile-transfers - devolve o que saiu da soma da casa")
+    void reconcileTransfersReportsWhatLeftTheHouse() {
+        when(familyTransferService.reconcile(EMAIL))
+                .thenReturn(new FamilyTransferService.Outcome(1755, 2, 1));
+
+        webTestClient.post()
+                .uri("/api/v1/family/reconcile-transfers")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.scanned").isEqualTo(1755)
+                .jsonPath("$.marked").isEqualTo(2)
+                // against = 0 explicaria um zero por falta de com quem comparar
+                .jsonPath("$.against").isEqualTo(1);
     }
 }

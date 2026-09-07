@@ -134,6 +134,7 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             where t.user.id = :userId and t.date >= :start and t.date < :end
               and t.internalTransfer = false
               and t.ignored = false
+              and t.familyTransfer = false
               and (t.categoryId is null or t.categoryId not in :hiddenCategoryIds)
               and ((t.accountId is null and :includeUnassigned = true)
                    or (t.accountId is not null
@@ -153,6 +154,7 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             where t.user.id = :userId and t.date >= :start and t.date < :end
               and t.internalTransfer = false
               and t.ignored = false
+              and t.familyTransfer = false
               and (t.categoryId is null or t.categoryId not in :hiddenCategoryIds)
               and ((t.accountId is null and :includeUnassigned = true)
                    or (t.accountId is not null
@@ -229,6 +231,17 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
     @Query("update BankTransaction t set t.internalTransfer = true "
             + "where t.user.id = :userId and t.id in :ids")
     int markAsInternalTransfer(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
+
+    /**
+     * Marca em bloco a transferência entre pessoas da mesma casa (V28). Sai só
+     * das somas da CASA — na análise pessoal do dono da linha o dinheiro entrou
+     * mesmo, e escondê-lo dele seria mentir sobre o extrato que ele tem na mão.
+     */
+    @Modifying
+    @Transactional
+    @Query("update BankTransaction t set t.familyTransfer = true "
+            + "where t.user.id = :userId and t.id in :ids")
+    int markAsFamilyTransfer(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
 
     /**
      * Marca em bloco o lado descartado de pares duplicados (V26). O motivo viaja

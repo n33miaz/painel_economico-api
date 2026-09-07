@@ -10,6 +10,7 @@ import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
 import br.com.economize.service.DuplicateTransactionService;
 import br.com.economize.service.InternalTransferService;
+import br.com.economize.service.family.FamilyTransferService;
 import br.com.economize.service.TransactionAliasService;
 import br.com.economize.service.TransactionReviewService;
 import org.junit.jupiter.api.DisplayName;
@@ -58,6 +59,9 @@ class TransactionControllerTest {
 
     @MockitoBean
     private InternalTransferService internalTransferService;
+
+    @MockitoBean
+    private FamilyTransferService familyTransferService;
 
     @MockitoBean
     private DuplicateTransactionService duplicateService;
@@ -292,5 +296,45 @@ class TransactionControllerTest {
 
     private String bearerToken() {
         return "Bearer " + jwtUtil.generateToken(EMAIL);
+    }
+
+    @Test
+    @DisplayName("PATCH /{id}/family-transfer - a decisão da pessoa numa linha")
+    void setFamilyTransferMarksASingleLine() {
+        UUID id = UUID.randomUUID();
+        BankTransaction linha = BankTransaction.builder()
+                .id(id)
+                .transactionId("tx-1")
+                .type("DEBIT")
+                .amount(new BigDecimal("-650.00"))
+                .description("Pix enviado - Alice dos Santos Araujo")
+                .date(OffsetDateTime.parse("2026-08-07T12:00:00Z"))
+                .familyTransfer(true)
+                .build();
+        when(familyTransferService.setFamilyTransfer(EMAIL, id, true)).thenReturn(linha);
+
+        webTestClient.patch()
+                .uri("/api/v1/transactions/" + id + "/family-transfer")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .bodyValue(java.util.Map.of("familyTransfer", true))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.familyTransfer").isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("PATCH /{id}/family-transfer - corpo sem o campo é 400, sem chegar ao serviço")
+    void setFamilyTransferRequiresTheFlag() {
+        UUID id = UUID.randomUUID();
+
+        webTestClient.patch()
+                .uri("/api/v1/transactions/" + id + "/family-transfer")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .bodyValue(java.util.Map.of())
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        verifyNoInteractions(familyTransferService);
     }
 }

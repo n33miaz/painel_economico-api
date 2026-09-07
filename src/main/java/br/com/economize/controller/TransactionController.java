@@ -5,11 +5,13 @@ import br.com.economize.dto.statement.BankTransactionResponse;
 import br.com.economize.dto.statement.ReviewApplyRequest;
 import br.com.economize.dto.statement.ReviewGroupResponse;
 import br.com.economize.dto.statement.UpdateIgnoredRequest;
+import br.com.economize.dto.statement.UpdateFamilyTransferRequest;
 import br.com.economize.dto.statement.UpdateInternalTransferRequest;
 import br.com.economize.dto.statement.UpdateTransactionAliasRequest;
 import br.com.economize.model.BankTransaction;
 import br.com.economize.service.DuplicateTransactionService;
 import br.com.economize.service.InternalTransferService;
+import br.com.economize.service.family.FamilyTransferService;
 import br.com.economize.service.TransactionAliasService;
 import br.com.economize.service.TransactionReviewService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +36,7 @@ public class TransactionController {
     private final TransactionReviewService reviewService;
     private final TransactionAliasService aliasService;
     private final InternalTransferService internalTransferService;
+    private final FamilyTransferService familyTransferService;
     private final DuplicateTransactionService duplicateService;
 
     @Operation(summary = "Listar transações bancárias",
@@ -113,6 +116,20 @@ public class TransactionController {
             @Valid @RequestBody UpdateInternalTransferRequest request) {
         return Mono.fromCallable(() -> BankTransactionResponse.from(
                         internalTransferService.setInternal(email, id, request.internalTransfer())))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Dizer se a linha é dinheiro que ficou dentro da casa",
+            description = "Transferência entre pessoas da mesma casa — o Pix entre o casal, a mesada. Sai "
+                    + "SÓ da soma da Casa: na sua análise pessoal a linha continua lá, porque o dinheiro "
+                    + "entrou mesmo na sua conta. Decisão sua: a varredura automática não a desfaz.")
+    @PatchMapping("/{id}/family-transfer")
+    public Mono<BankTransactionResponse> setFamilyTransfer(
+            @AuthenticationPrincipal String email,
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateFamilyTransferRequest request) {
+        return Mono.fromCallable(() -> BankTransactionResponse.from(
+                        familyTransferService.setFamilyTransfer(email, id, request.familyTransfer())))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 

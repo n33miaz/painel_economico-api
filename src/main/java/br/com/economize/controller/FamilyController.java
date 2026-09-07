@@ -6,6 +6,7 @@ import br.com.economize.dto.family.FamilyRequests;
 import br.com.economize.dto.family.FamilyResponses;
 import br.com.economize.dto.family.FamilyTransactionResponse;
 import br.com.economize.service.family.FamilyAnalyticsService;
+import br.com.economize.service.family.FamilyTransferService;
 import br.com.economize.service.family.FamilyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +38,7 @@ public class FamilyController {
 
     private final FamilyService familyService;
     private final FamilyAnalyticsService familyAnalyticsService;
+    private final FamilyTransferService familyTransferService;
 
     @Operation(summary = "Minha casa",
             description = "Grupo, membros (com o que cada um compartilha), os meus parâmetros de "
@@ -159,6 +161,21 @@ public class FamilyController {
             @RequestParam(required = false) UUID categoryId) {
         AnalysisWindow window = resolveWindow(month, start, end);
         return Mono.fromCallable(() -> familyAnalyticsService.transactions(email, window, memberId, categoryId))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Descontar o que circulou dentro da casa",
+            description = "Varre os MEUS lançamentos e marca as transferências cuja contraparte é outra "
+                    + "pessoa da mesma casa — o Pix entre o casal, a mesada, o rateio da conta de luz. "
+                    + "Esse dinheiro não é renda da casa: renda da casa é o que entra de fora, e o que "
+                    + "circula entre os dois já foi contado quando entrou. A marca vale SÓ para a visão da "
+                    + "casa: na minha análise pessoal a linha continua lá, porque o dinheiro entrou mesmo. "
+                    + "Cada pessoa roda pela sua conta — a API nunca escreve na conta de outro usuário. "
+                    + "Nada é desmarcado, então rodar duas vezes é seguro. `against` diz contra quantos "
+                    + "membros houve nome completo para comparar: zero explica um resultado zerado.")
+    @PostMapping("/reconcile-transfers")
+    public Mono<FamilyTransferService.Outcome> reconcileTransfers(@AuthenticationPrincipal String email) {
+        return Mono.fromCallable(() -> familyTransferService.reconcile(email))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 

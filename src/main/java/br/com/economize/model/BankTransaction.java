@@ -99,6 +99,19 @@ public class BankTransaction {
     private boolean internalTransfer;
 
     /**
+     * Transferência entre pessoas da MESMA casa (V28): o Pix do marido para a
+     * esposa, a mesada, o rateio da conta de luz.
+     *
+     * <p>Diferente de {@link #internalTransfer} de propósito, porque a resposta
+     * depende de quem pergunta. Para a esposa, aquele dinheiro entrou na conta
+     * dela e É receita — a análise pessoal dela continua mostrando. Para a CASA
+     * não é: renda da casa é o que entra de fora, e o que circula entre os dois
+     * já foi contado quando entrou. Só as consultas da casa filtram esta marca.
+     */
+    @Column(name = "family_transfer", nullable = false)
+    private boolean familyTransfer;
+
+    /**
      * A linha não deveria existir — quase sempre a mesma transação que entrou
      * pela conexão bancária E por um arquivo importado (V26).
      *

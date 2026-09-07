@@ -9,14 +9,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.text.Normalizer;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
 import java.util.Set;
+import java.util.List;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * Dinheiro do titular trocando de bolso — e como dizer isso ao app.
@@ -43,24 +39,6 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class InternalTransferService {
-
-    /**
-     * Só descrição de transferência entra na varredura. Uma compra num
-     * estabelecimento que por acaso se chame como o titular não é movimentação
-     * entre contas dele — e "MERCADO SILVA" existe.
-     */
-    private static final Pattern TRANSFER_LIKE = Pattern.compile(
-            "\\b(pix|ted|doc|transferencia|transferido|deposito)\\b");
-
-    private static final Pattern ACCENTS = Pattern.compile("\\p{M}+");
-    private static final Pattern NON_WORD = Pattern.compile("[^a-z0-9 ]+");
-    private static final Pattern SPACES = Pattern.compile("\\s+");
-
-    /**
-     * Partículas que não identificam ninguém: exigir "de", "dos" e "da" no meio
-     * faria "Neemias Manso" (como o banco às vezes abrevia) deixar de casar.
-     */
-    private static final Set<String> PARTICLES = Set.of("de", "da", "do", "das", "dos", "e");
 
     private final BankTransactionRepository bankTransactionRepository;
     private final UserRepository userRepository;
@@ -89,7 +67,7 @@ public class InternalTransferService {
      */
     public Outcome reconcileByOwnName(String email) {
         User user = requireUser(email);
-        List<String> tokens = nameTokens(user.getName());
+        List<String> tokens = CounterpartyMatcher.nameTokens(user.getName());
         if (tokens.size() < 2) {
             // Sem nome completo no cadastro não há sinal: responder "zero" é
             // honesto, inventar um casamento por primeiro nome não é
@@ -101,10 +79,10 @@ public class InternalTransferService {
         Set<UUID> toMark = new LinkedHashSet<>();
         for (BankTransaction tx : all) {
             if (tx.isInternalTransfer()) continue;
-            String normalized = normalize(tx.getDescription());
+            String normalized = CounterpartyMatcher.normalize(tx.getDescription());
             if (normalized.isEmpty()) continue;
-            if (!TRANSFER_LIKE.matcher(normalized).find()) continue;
-            if (!carriesOwnName(normalized, tokens)) continue;
+            if (!CounterpartyMatcher.TRANSFER_LIKE.matcher(normalized).find()) continue;
+            if (!CounterpartyMatcher.carries(normalized, tokens)) continue;
             toMark.add(tx.getId());
         }
 
@@ -114,38 +92,6 @@ public class InternalTransferService {
         log.info("Varredura de movimentação própria: {} de {} lançamento(s) marcados, user={}",
                 toMark.size(), all.size(), email);
         return new Outcome(all.size(), toMark.size(), true);
-    }
-
-    /**
-     * Todos os tokens do nome têm de estar presentes, cada um como palavra
-     * inteira. Basta um faltar para não ser o titular: "Neemias Cormino Manso"
-     * não casa com "Neemias Cormino Souza".
-     */
-    private boolean carriesOwnName(String normalized, List<String> tokens) {
-        String padded = " " + normalized + " ";
-        for (String token : tokens) {
-            if (!padded.contains(" " + token + " ")) return false;
-        }
-        return true;
-    }
-
-    private List<String> nameTokens(String name) {
-        List<String> tokens = new ArrayList<>();
-        if (name == null) return tokens;
-        for (String piece : normalize(name).split(" ")) {
-            // token de uma letra é inicial abreviada; partícula não identifica
-            if (piece.length() < 2 || PARTICLES.contains(piece)) continue;
-            tokens.add(piece);
-        }
-        return tokens;
-    }
-
-    private String normalize(String value) {
-        if (value == null) return "";
-        String base = ACCENTS
-                .matcher(Normalizer.normalize(value.toLowerCase(Locale.ROOT), Normalizer.Form.NFD))
-                .replaceAll("");
-        return SPACES.matcher(NON_WORD.matcher(base).replaceAll(" ")).replaceAll(" ").trim();
     }
 
     private User requireUser(String email) {
