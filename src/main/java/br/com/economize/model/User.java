@@ -47,9 +47,36 @@ public class User implements UserDetails {
     @Column(name = "must_change_password", nullable = false)
     private boolean mustChangePassword;
 
+    /**
+     * Plano da conta (V23). FREE e o app mostra anuncios; PLUS e nao mostra —
+     * enquanto {@link #isPlus()} disser que sim. Default FREE nos dois lados
+     * (builder e banco): e o estado de toda conta que ja existe.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private Plan plan = Plan.FREE;
+
+    /** Ate quando o PLUS vale; nulo em FREE ou PLUS sem prazo (concessao manual). */
+    @Column(name = "plan_until")
+    private OffsetDateTime planUntil;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = OffsetDateTime.now();
+        // rede para quem construir a entidade fora do builder: a coluna e NOT NULL
+        if (this.plan == null) {
+            this.plan = Plan.FREE;
+        }
+    }
+
+    /**
+     * PLUS vigente? PLUS sem prazo vale para sempre; com prazo, vale ate ele.
+     * Vencido, a conta volta a ver anuncio sem job nenhum — e a coluna continua
+     * PLUS para o historico. E daqui que sai o adsEnabled do GET /users/me.
+     */
+    public boolean isPlus() {
+        return plan == Plan.PLUS && (planUntil == null || planUntil.isAfter(OffsetDateTime.now()));
     }
 
     @Override
