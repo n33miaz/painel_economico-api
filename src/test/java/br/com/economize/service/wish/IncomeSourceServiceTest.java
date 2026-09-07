@@ -25,6 +25,7 @@ import org.mockito.quality.Strictness;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -122,7 +123,8 @@ class IncomeSourceServiceTest {
         RecurringSeries conta = series(RecurringSeries.Flow.EXPENSE, "sabesp", "Sabesp", (short) 10);
         when(recurringSeriesRepository.findAllByUserId(USER_ID))
                 .thenReturn(List.of(salario, jaAceita, conta));
-        when(incomeSourceRepository.existsByUserIdAndSeriesId(USER_ID, jaAceita.getId())).thenReturn(true);
+        // o conjunto vem numa consulta só — série a série era o N+1 que segurava o /income
+        when(incomeSourceRepository.findLinkedSeriesIds(USER_ID)).thenReturn(Set.of(jaAceita.getId()));
 
         WishResponses.IncomeOverview overview = service.overview(EMAIL);
 

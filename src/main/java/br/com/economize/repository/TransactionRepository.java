@@ -10,6 +10,9 @@ import java.util.UUID;
 
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+    /** Mesma razão do extrato: o Perfil quer o número, não os lançamentos. */
+    long countByUserId(UUID userId);
+
     List<Transaction> findAllByUserIdOrderByTransactionDateDesc(UUID userId);
 
     // Dono validado NA CONSULTA, como no resto do catálogo: operação de outro

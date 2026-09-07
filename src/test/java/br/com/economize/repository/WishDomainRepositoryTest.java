@@ -190,6 +190,10 @@ class WishDomainRepositoryTest {
         // Para o vizinho a mesma série é desconhecida: a chave de idempotência
         // é o par (usuário, série), nunca a série sozinha
         assertThat(incomeSourceRepository.existsByUserIdAndSeriesId(estranho.getId(), serie)).isFalse();
+        // O conjunto inteiro numa consulta responde o mesmo que a pergunta série a
+        // série — e fonte sem série (cadastro manual) não polui o conjunto
+        assertThat(incomeSourceRepository.findLinkedSeriesIds(dono.getId())).containsExactly(serie);
+        assertThat(incomeSourceRepository.findLinkedSeriesIds(estranho.getId())).isEmpty();
     }
 
     @Test

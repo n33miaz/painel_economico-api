@@ -22,6 +22,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -91,11 +92,15 @@ public class IncomeSourceService {
      */
     private List<WishResponses.Suggestion> suggestions(UUID userId) {
         List<WishResponses.Suggestion> out = new ArrayList<>();
+        // Uma consulta para o conjunto inteiro, e não uma por série: o laço
+        // abaixo percorre TODAS as séries do usuário, e perguntar ao banco a cada
+        // volta era o que segurava a Home em segundos (ver o repositório)
+        Set<UUID> linked = incomeSourceRepository.findLinkedSeriesIds(userId);
         for (RecurringSeries series : recurringSeriesRepository.findAllByUserId(userId)) {
             if (series.getFlow() != RecurringSeries.Flow.INCOME) continue;
             if (!series.isActive() || series.isDismissed()) continue;
             if (series.getCadence() == RecurringSeries.Cadence.IRREGULAR) continue;
-            if (incomeSourceRepository.existsByUserIdAndSeriesId(userId, series.getId())) continue;
+            if (linked.contains(series.getId())) continue;
 
             String label = series.getDisplayName() != null
                     ? series.getDisplayName() : series.getMerchantKey();

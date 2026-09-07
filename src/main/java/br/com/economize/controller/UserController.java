@@ -3,7 +3,11 @@ package br.com.economize.controller;
 import br.com.economize.dto.user.ChangePasswordRequest;
 import br.com.economize.dto.user.UpdateUserRequest;
 import br.com.economize.dto.user.UserMeResponse;
+import br.com.economize.dto.user.UserStatsResponse;
 import br.com.economize.model.User;
+import br.com.economize.repository.BankTransactionRepository;
+import br.com.economize.repository.ReportRepository;
+import br.com.economize.repository.TransactionRepository;
 import br.com.economize.repository.UserRepository;
 import br.com.economize.service.PasswordService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -24,12 +30,32 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final PasswordService passwordService;
+    // Só para contar: o hub do Perfil mostra três números, e antes disso a tela
+    // baixava as três listas inteiras para chegar a eles
+    private final BankTransactionRepository bankTransactionRepository;
+    private final TransactionRepository transactionRepository;
+    private final ReportRepository reportRepository;
 
     @Operation(summary = "Dados do usuário autenticado")
     @GetMapping("/me")
     public Mono<UserMeResponse> me(@AuthenticationPrincipal String email) {
         return Mono.fromCallable(() -> UserMeResponse.from(requireUser(email)))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Contadores do hub do Perfil",
+            description = "Só os números de extrato, carteira e relatórios. O Perfil desenhava os três "
+                    + "contadores baixando as três listas inteiras (100 KB só de extrato para 1.752 linhas) "
+                    + "a cada abertura, quando o que aparecia na tela era a contagem.")
+    @GetMapping("/me/stats")
+    public Mono<UserStatsResponse> stats(@AuthenticationPrincipal String email) {
+        return Mono.fromCallable(() -> {
+            UUID userId = requireUser(email).getId();
+            return new UserStatsResponse(
+                    bankTransactionRepository.countByUserId(userId),
+                    transactionRepository.countByUserId(userId),
+                    reportRepository.countByUserId(userId));
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     @Operation(summary = "Atualizar nome do usuário")
