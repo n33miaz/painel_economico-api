@@ -6,12 +6,8 @@ import br.com.economize.service.provider.MarketDataProvider;
 import br.com.economize.service.provider.MarketSnapshotStore;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -25,17 +21,14 @@ import java.util.List;
 public class IndicatorService {
 
         private final List<MarketDataProvider> dataProviders;
-        private final WebClient webClient;
         private final MarketSnapshotStore snapshotStore;
+        private final HistoricalDataService historicalDataService;
 
-        @Value("${awesome.api.url}")
-        private String awesomeApiUrl;
-
-        public IndicatorService(List<MarketDataProvider> dataProviders, WebClient webClient,
-                        MarketSnapshotStore snapshotStore) {
+        public IndicatorService(List<MarketDataProvider> dataProviders, MarketSnapshotStore snapshotStore,
+                        HistoricalDataService historicalDataService) {
                 this.dataProviders = dataProviders;
-                this.webClient = webClient;
                 this.snapshotStore = snapshotStore;
+                this.historicalDataService = historicalDataService;
         }
 
         @Cacheable("indicators")
@@ -80,23 +73,13 @@ public class IndicatorService {
                                 });
         }
 
-        @Cacheable("historical")
+        /**
+         * A série do gráfico mora em {@link HistoricalDataService}: é lá que ficam
+         * o orçamento da AwesomeAPI, o fallback (SGS/CoinGecko), o snapshot e o
+         * cache de 1h. Este método existe para o contrato de quem já chama aqui.
+         */
         public Mono<List<HistoricalDataPoint>> getHistoricalData(String currencyCode, int days) {
-                if (currencyCode == null || currencyCode.length() < 3) {
-                        return Mono.error(new IllegalArgumentException("Código de moeda inválido"));
-                }
-
-                String cleanCode = currencyCode.replace("currency_", "").replace("crypto_", "");
-                String historicalApiUrl = String.format("/daily/%s-BRL/%d", cleanCode, days);
-
-                return webClient.get()
-                                .uri(awesomeApiUrl + historicalApiUrl)
-                                .retrieve()
-                                .onStatus(HttpStatusCode::isError,
-                                                response -> Mono.error(new RuntimeException("Erro API Histórico")))
-                                .bodyToMono(new ParameterizedTypeReference<List<HistoricalDataPoint>>() {
-                                })
-                                .onErrorResume(e -> Mono.just(Collections.emptyList()));
+                return historicalDataService.getHistoricalData(currencyCode, days);
         }
 
         public Mono<BigDecimal> calculateConversion(String currencyCode, BigDecimal amountInBrl) {

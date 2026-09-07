@@ -298,11 +298,15 @@ public class BrapiProvider implements MarketDataProvider {
                 && response.getStatusCode().value() == 404;
     }
 
+    /** Rótulo de procedência que o app mostra ao lado de "atualizado às". */
+    public static final String SOURCE = "Brapi";
+
     @SuppressWarnings("unchecked")
     private List<Indicator> parseBrapiResponse(Map<String, Object> response) {
         List<Indicator> stocks = new ArrayList<>();
         if (response.containsKey("results")) {
             List<Map<String, Object>> results = (List<Map<String, Object>>) response.get("results");
+            java.time.Instant fetchedAt = java.time.Instant.now();
             for (Map<String, Object> item : results) {
                 Indicator ind = new Indicator();
                 String symbol = (String) item.get("symbol");
@@ -323,9 +327,28 @@ public class BrapiProvider implements MarketDataProvider {
                     ind.setVariation(BigDecimal.valueOf(((Number) changeObj).doubleValue()));
                 }
 
+                ind.setSource(SOURCE);
+                ind.setAsOf(marketTime(item.get("regularMarketTime"), fetchedAt));
+
                 stocks.add(ind);
             }
         }
         return stocks;
+    }
+
+    /**
+     * A Brapi data a cotação em {@code regularMarketTime} (ISO-8601, UTC). Sem
+     * ele, ou com ele ilegível, vale o instante da leitura — melhor uma data
+     * conservadora do que nenhuma.
+     */
+    private static java.time.Instant marketTime(Object raw, java.time.Instant fallback) {
+        if (raw instanceof String text && !text.isBlank()) {
+            try {
+                return java.time.Instant.parse(text.trim());
+            } catch (java.time.format.DateTimeParseException e) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 }

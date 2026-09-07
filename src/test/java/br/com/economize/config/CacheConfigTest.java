@@ -19,7 +19,8 @@ class CacheConfigTest {
     @Test
     @DisplayName("Todo cache usado por @Cacheable precisa existir no gerenciador")
     void everyDeclaredCacheMustResolve() {
-        for (String name : new String[] { "indicators", "indicatorSearch", "news", "historical" }) {
+        for (String name : new String[] { "indicators", "indicatorSearch", "news", "historical", "macro",
+                "treasury", "foreignQuote" }) {
             assertNotNull(cacheManager.getCache(name), "cache ausente: " + name);
         }
     }

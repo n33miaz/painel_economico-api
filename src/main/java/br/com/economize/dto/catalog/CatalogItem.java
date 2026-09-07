@@ -42,6 +42,10 @@ public class CatalogItem extends Indicator {
         item.setSell(source.getSell());
         item.setVariation(source.getVariation());
         item.setPoints(source.getPoints());
+        // procedência e data viajam com o preço: o catálogo mostra o mesmo
+        // "atualizado às · fonte" que a Home
+        item.setSource(source.getSource());
+        item.setAsOf(source.getAsOf());
         item.setSegment(segment);
         item.setQuoteStatus(quoteStatus);
         return item;

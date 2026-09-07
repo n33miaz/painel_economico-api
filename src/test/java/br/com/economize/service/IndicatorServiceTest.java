@@ -1,5 +1,6 @@
 package br.com.economize.service;
 
+import br.com.economize.dto.HistoricalDataPoint;
 import br.com.economize.dto.Indicator;
 import br.com.economize.service.provider.MarketDataProvider;
 import br.com.economize.service.provider.MarketSnapshotStore;
@@ -9,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,7 +28,7 @@ class IndicatorServiceTest {
     private MarketDataProvider mockProvider;
 
     @Mock
-    private WebClient webClient;
+    private HistoricalDataService historicalDataService;
 
     private MarketSnapshotStore snapshotStore;
 
@@ -37,7 +38,7 @@ class IndicatorServiceTest {
     void setUp() {
         snapshotStore = new MarketSnapshotStore();
         // Injetamos uma lista contendo o nosso provider mockado
-        indicatorService = new IndicatorService(List.of(mockProvider), webClient, snapshotStore);
+        indicatorService = new IndicatorService(List.of(mockProvider), snapshotStore, historicalDataService);
     }
 
     @Test
@@ -92,5 +93,20 @@ class IndicatorServiceTest {
         StepVerifier.create(indicatorService.getAllIndicatorsFallback(new RuntimeException("circuito aberto")))
                 .assertNext(indicators -> assertEquals(0, indicators.size()))
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Histórico é delegado ao serviço que guarda orçamento, fallback e snapshot")
+    void historicalDataShouldBeDelegated() {
+        HistoricalDataPoint point = new HistoricalDataPoint();
+        point.setTimestamp("1788557375");
+        point.setHigh(new BigDecimal("5.13"));
+        when(historicalDataService.getHistoricalData("USD", 7)).thenReturn(Mono.just(List.of(point)));
+
+        StepVerifier.create(indicatorService.getHistoricalData("USD", 7))
+                .assertNext(points -> assertEquals(1, points.size()))
+                .verifyComplete();
+
+        verify(historicalDataService).getHistoricalData("USD", 7);
     }
 }

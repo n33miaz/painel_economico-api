@@ -38,10 +38,32 @@ public class CacheConfig {
      */
     private static final Duration SEARCH_TTL = Duration.ofMinutes(5);
 
+    /**
+     * Série diária para o gráfico, por (moeda, janela). Uma hora porque a série
+     * é diária — não muda em dez minutos — e porque cada consulta à AwesomeAPI
+     * sai do mesmo orçamento que sustenta o /all da Home (AwesomeApiBudget):
+     * com 10 min, vinte moedas em duas janelas custariam mais que a cota do dia.
+     */
+    static final Duration HISTORICAL_TTL = Duration.ofHours(1);
+
+    /**
+     * Indicadores macro (CDI, Selic, IPCA, PTAX, poupança, IGP-M). Seis horas:
+     * CDI e PTAX mudam uma vez por dia, o resto uma vez por mês — e o SGS do
+     * Banco Central é um serviço público que não precisa ser consultado a cada
+     * abertura de tela.
+     */
+    static final Duration MACRO_TTL = Duration.ofHours(6);
+
+    /** Títulos do Tesouro: a fonte que funciona hoje (CSV do Tesouro Transparente) é diária. */
+    static final Duration TREASURY_TTL = Duration.ofHours(1);
+
+    /** Cotação estrangeira (Yahoo/Stooq): mesmo frescor das outras cotações. */
+    static final Duration FOREIGN_QUOTE_TTL = Duration.ofMinutes(30);
+
     @SuppressWarnings("null")
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager("news", "historical");
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("news");
 
         cacheManager.setAsyncCacheMode(true);
 
@@ -61,6 +83,32 @@ public class CacheConfig {
         cacheManager.registerCustomCache("indicatorSearch", Caffeine.newBuilder()
                 .expireAfterWrite(SEARCH_TTL)
                 .maximumSize(300)
+                .recordStats()
+                .buildAsync());
+
+        // e estes são os que se pagam em cota da AwesomeAPI ou em paciência de
+        // serviço público: mais longos que o default de propósito
+        cacheManager.registerCustomCache("historical", Caffeine.newBuilder()
+                .expireAfterWrite(HISTORICAL_TTL)
+                .maximumSize(200)
+                .recordStats()
+                .buildAsync());
+
+        cacheManager.registerCustomCache("macro", Caffeine.newBuilder()
+                .expireAfterWrite(MACRO_TTL)
+                .maximumSize(10)
+                .recordStats()
+                .buildAsync());
+
+        cacheManager.registerCustomCache("treasury", Caffeine.newBuilder()
+                .expireAfterWrite(TREASURY_TTL)
+                .maximumSize(10)
+                .recordStats()
+                .buildAsync());
+
+        cacheManager.registerCustomCache("foreignQuote", Caffeine.newBuilder()
+                .expireAfterWrite(FOREIGN_QUOTE_TTL)
+                .maximumSize(200)
                 .recordStats()
                 .buildAsync());
 
