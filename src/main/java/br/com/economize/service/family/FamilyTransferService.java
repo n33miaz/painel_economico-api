@@ -11,6 +11,7 @@ import br.com.economize.service.CounterpartyMatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -51,6 +52,7 @@ public class FamilyTransferService {
      * Marca (ou desmarca) UMA linha como dinheiro que ficou dentro da casa. É a
      * decisão da pessoa e vence a heurística: a varredura nunca desfaz.
      */
+    @Transactional
     public BankTransaction setFamilyTransfer(String email, UUID transactionId, boolean familyTransfer) {
         User user = requireUser(email);
         BankTransaction tx = bankTransactionRepository
@@ -67,7 +69,13 @@ public class FamilyTransferService {
      * <p>Cada um roda pela SUA conta: a API nunca escreve na conta de outro
      * usuário, nem quando ele é da mesma família. Rodar duas vezes é seguro —
      * nada é desmarcado, e linha já marcada é pulada.
+     *
+     * <p>Transacional porque o vínculo do membro traz o grupo e o usuário como
+     * proxies LAZY, e o nome do outro membro — o sinal inteiro da varredura —
+     * só pode ser lido com a sessão aberta. Sem isto o método compila, passa no
+     * teste de unidade (que monta as entidades à mão) e explode em produção.
      */
+    @Transactional
     public Outcome reconcile(String email) {
         User user = requireUser(email);
         FamilyMember me = memberRepository.findByUserId(user.getId()).orElse(null);
