@@ -1,10 +1,12 @@
 package br.com.economize.controller;
 
+import br.com.economize.config.ConnectorProviderConfig;
 import br.com.economize.config.CorsConfig;
 import br.com.economize.dto.connector.RegisterPluggyItemRequest;
 import br.com.economize.security.JwtAuthenticationFilter;
 import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
+import br.com.economize.service.connector.NoOpOpenFinanceProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,12 +20,14 @@ import java.util.UUID;
 
 /**
  * Com PLUGGY_ENABLED=false os services do conector nem existem no contexto
- * (@ConditionalOnProperty) — aqui nenhum mock é registrado de propósito, para
- * o ObjectProvider do controller resolver vazio como em produção com a flag
- * desligada: /status responde "desligado" e o resto orienta a ligar a flag.
+ * (@ConditionalOnProperty) e quem responde é o {@link NoOpOpenFinanceProvider}
+ * — importado aqui explicitamente porque a fatia web não varre serviços. O
+ * contrato do APK publicado se mantém: /status responde "desligado" e o resto
+ * orienta a ligar a flag com 400 (a rota neutra responde 503; esta, não).
  */
 @WebFluxTest(PluggyConnectorController.class)
-@Import({ CorsConfig.class, SecurityConfig.class, JwtUtil.class, JwtAuthenticationFilter.class})
+@Import({ CorsConfig.class, SecurityConfig.class, JwtUtil.class, JwtAuthenticationFilter.class,
+        ConnectorProviderConfig.class })
 class PluggyConnectorFlagOffTest {
 
     private static final String EMAIL = "teste@economize.app";

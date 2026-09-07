@@ -1,5 +1,7 @@
 package br.com.economize.service.connector.pluggy;
 
+import br.com.economize.service.connector.NoOpOpenFinanceProvider;
+import br.com.economize.service.connector.OpenFinanceProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,5 +44,16 @@ class PluggyConnectorWiringTest {
         // o cliente dedicado existe de verdade: os 256 KB do codec padrão
         // estouram numa página de 500 transações de cartão
         assertThat(context.containsBean("pluggyWebClient")).isTrue();
+    }
+
+    @Test
+    @DisplayName("com a flag ligada o Pluggy é o OpenFinanceProvider da porta neutra, e o vazio não sobe")
+    void pluggyIsTheProviderWhenEnabled() {
+        // o @ConditionalOnMissingBean da implementação vazia precisa ENXERGAR
+        // esta aqui: se a ordem de registro o traísse, haveria dois provedores
+        // e a injeção nos controllers falharia por ambiguidade
+        assertThat(context.getBeansOfType(OpenFinanceProvider.class)).hasSize(1);
+        assertThat(context.getBean(OpenFinanceProvider.class)).isInstanceOf(PluggyOpenFinanceProvider.class);
+        assertThat(context.getBeansOfType(NoOpOpenFinanceProvider.class)).isEmpty();
     }
 }

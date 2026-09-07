@@ -227,4 +227,40 @@ public class PluggyClient {
         }
         return all;
     }
+
+    /**
+     * GET /investments?itemId= — posições de investimento de uma conexão,
+     * TODAS as páginas.
+     *
+     * <p>É o recurso que o sync de extrato ignora de propósito: a conta
+     * INVESTMENT do {@code /accounts} não tem lançamentos úteis, e o que
+     * interessa dela é a POSIÇÃO (saldo, quantidade, taxa, vencimento), que
+     * mora aqui. Mesma paginação e mesma trava de páginas de {@code accounts}:
+     * {@code next} é dado de terceiro, e um cursor que se repetisse deixaria o
+     * sync girando para sempre. O corpo volta cru ({@code Map}) porque o
+     * contrato de investimento do Pluggy varia por tipo de ativo — quem sabe
+     * quais campos existem em cada caso é o mapeador, não o cliente.
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> investments(String apiKey, String itemId) {
+        List<Map<String, Object>> all = new ArrayList<>();
+        String query = "?itemId=" + itemId;
+
+        for (int page = 0; page < MAX_PAGES && query != null && !query.isBlank(); page++) {
+            Map<String, Object> body = webClient.get()
+                    .uri(URI.create(baseUrl + "/investments" + query))
+                    .header("X-API-KEY", apiKey)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {
+                    })
+                    .block();
+            if (body == null) break;
+            Object results = body.get("results");
+            if (results instanceof List<?> list) {
+                all.addAll((List<Map<String, Object>>) list);
+            }
+            query = nextQuery(body.get("next"), baseUrl + "/investments");
+        }
+        return all;
+    }
 }
