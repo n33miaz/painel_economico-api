@@ -66,6 +66,19 @@ public class RecurrenceDetectionService {
     static final int MIN_OCCURRENCES = 3;
     // intervalos mais recentes que decidem cadência, âncora e tolerância (ver computeStats)
     static final int RECENT_INTERVALS = 12;
+
+    /**
+     * Janela do VALOR, mais curta que a da cadência — e são coisas diferentes.
+     *
+     * <p>Cadência é um hábito e leva um ano para se estabelecer; valor é um número
+     * que anda. Medido na fatura do cartão do dono, 34 pagamentos entre 12/2024 e
+     * 09/2026: ela subiu de R$ 189 para R$ 2.311 sem um degrau, e a média das
+     * últimas 13 previa <b>R$ 1.480</b> — mil reais abaixo do que ele paga hoje.
+     * Seis ocorrências cobrem meio ano de cobrança mensal: perto o bastante para
+     * seguir a tendência, largo o bastante para uma fatura paga pela metade num
+     * mês não virar a previsão.
+     */
+    static final int RECENT_AMOUNTS = 6;
     private static final int STALE_CYCLES = 2;
     private static final int MAX_DAY_TOLERANCE = 15;
     // ciclo do dia do mês para distância circular: dia 31 e dia 1 distam 1
@@ -127,8 +140,25 @@ public class RecurrenceDetectionService {
     }
 
     private DetectionSummary runDetection(User user) {
+        // O MESMO filtro da análise pessoal, e não um critério próprio: previsão
+        // que soma linha que a Análise não soma responde outra pergunta e vira
+        // número que ninguém consegue conferir.
+        //
+        // `ignored` é a linha que entrou duas vezes, por duas fontes: ela não
+        // deveria existir, quanto menos virar um hábito. Vinte delas no extrato
+        // do dono, e sem este filtro cada uma engorda a série do lado que ficou.
+        //
+        // `internalTransfer` FICA, e não é esquecimento: o detector já funde as
+        // duas pernas numa série INTERNAL, que a previsão ignora por construção.
+        // Filtrar aqui apagaria esse registro sem melhorar número nenhum.
+        //
+        // `familyTransfer` também fica: o Pix para a esposa sai da conta dele de
+        // verdade, e a previsão DELE tem de contar com isso. Aquela marca muda a
+        // soma da Casa, não a de quem é dono da linha.
         List<BankTransaction> transactions =
-                bankTransactionRepository.findAllByUserIdOrderByDateDesc(user.getId());
+                bankTransactionRepository.findAllByUserIdOrderByDateDesc(user.getId()).stream()
+                        .filter(tx -> !tx.isIgnored())
+                        .toList();
         if (transactions.isEmpty()) {
             return new DetectionSummary(0, 0, 0);
         }
@@ -577,6 +607,9 @@ public class RecurrenceDetectionService {
 
         RecurringSeries.Cadence hint = corroboratedHint(sorted, extractions);
         RecurringSeries.Cadence cadence = hint != null ? hint : classifyCadence(gaps);
+        if (cadence == RecurringSeries.Cadence.IRREGULAR && mensalPelosMeses(days)) {
+            cadence = RecurringSeries.Cadence.MONTHLY;
+        }
 
         Short anchorDay = null;
         Short dayTolerance = null;
@@ -599,7 +632,11 @@ public class RecurrenceDetectionService {
         List<BankTransaction> recent = sorted.stream()
                 .filter(tx -> recentDays.contains(utcDay(tx.getDate())))
                 .toList();
-        List<BigDecimal> amounts = recent.stream().map(tx -> tx.getAmount().abs()).toList();
+        List<BigDecimal> todos = recent.stream().map(tx -> tx.getAmount().abs()).toList();
+        // A janela do valor é mais curta que a da cadência — ver RECENT_AMOUNTS
+        List<BigDecimal> amounts = todos.size() > RECENT_AMOUNTS
+                ? todos.subList(todos.size() - RECENT_AMOUNTS, todos.size())
+                : todos;
         BigDecimal min = amounts.stream().min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
         BigDecimal max = amounts.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
         // mediana de verdade exige ordenar por VALOR: "amounts" está em ordem
@@ -611,10 +648,17 @@ public class RecurrenceDetectionService {
         boolean fixed = max.subtract(min)
                 .compareTo(median.multiply(FIXED_SPREAD_RATIO).max(new BigDecimal("0.01"))) <= 0;
         // FIXED segue o último valor (reajuste de assinatura muda a previsão na
-        // hora); VARIABLE usa a média, porque cada conta de consumo é diferente
+        // hora); VARIABLE usa a MEDIANA da janela curta, e não a média.
+        //
+        // A média foi trocada por dois motivos medidos no extrato real. Ela se
+        // deixa puxar por um único valor fora da curva — o dono pagou R$ 1.291 de
+        // uma fatura de R$ 2 mil em 07/2026, e essa única linha derrubava a
+        // previsão das seguintes — e, num número que sobe mês a mês, ela fica
+        // sempre atrás. Nas seis últimas faturas: média R$ 2.123, mediana
+        // R$ 2.213, próxima fatura real R$ 2.311.
         BigDecimal expected = fixed
                 ? latest.getAmount().abs().setScale(4, RoundingMode.HALF_UP)
-                : average(amounts);
+                : median.setScale(4, RoundingMode.HALF_UP);
 
         String displayName = latest.getDescription() == null || latest.getDescription().isBlank()
                 ? merchantKey
@@ -646,6 +690,30 @@ public class RecurrenceDetectionService {
                 .filter(tx -> extractions.get(tx.getId()).cadenceHint() != null)
                 .count();
         return hinted * 2 >= sorted.size() ? hint : null;
+    }
+
+    /**
+     * Resgate do que é mensal e os intervalos não viram — só quando eles já
+     * desistiram (IRREGULAR), então esta regra nunca reclassifica nada, só
+     * acrescenta.
+     *
+     * <p>O caso medido: o vale-refeição do dono cai todo mês (25/06, 29/07,
+     * 28/08), e uma recarga extra de R$ 24 em 07/07 partiu os intervalos em
+     * 12/22/30 dias. A mediana caiu em 22 e a segunda maior renda dele saiu
+     * IRREGULAR — fora da previsão, que ignora irregular por construção.
+     *
+     * <p>A assinatura aqui não olha intervalo nenhum: <b>o que acontece em todo
+     * mês é mensal</b>, por definição. Exige três meses de calendário seguidos,
+     * sem buraco, e no máximo uma ocorrência e meia por mês — esse teto é o que
+     * impede a padaria de três visitas por mês de virar "conta mensal".
+     */
+    private boolean mensalPelosMeses(List<LocalDate> days) {
+        List<YearMonth> meses = days.stream().map(YearMonth::from).distinct().sorted().toList();
+        if (meses.size() < 3) return false;
+        for (int i = 1; i < meses.size(); i++) {
+            if (ChronoUnit.MONTHS.between(meses.get(i - 1), meses.get(i)) != 1) return false;
+        }
+        return days.size() * 2 <= meses.size() * 3;
     }
 
     private RecurringSeries.Cadence classifyCadence(List<Long> gaps) {
@@ -711,12 +779,6 @@ public class RecurrenceDetectionService {
     private int circularDistance(int a, int b) {
         int diff = Math.abs(a - b);
         return Math.min(diff, MONTH_CYCLE - diff);
-    }
-
-    private BigDecimal average(List<BigDecimal> amounts) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (BigDecimal amount : amounts) sum = sum.add(amount);
-        return sum.divide(BigDecimal.valueOf(amounts.size()), 4, RoundingMode.HALF_UP);
     }
 
     private UUID dominantCategory(List<BankTransaction> sorted) {
