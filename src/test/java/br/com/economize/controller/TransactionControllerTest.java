@@ -10,6 +10,7 @@ import br.com.economize.security.JwtUtil;
 import br.com.economize.security.SecurityConfig;
 import br.com.economize.service.DuplicateTransactionService;
 import br.com.economize.service.InternalTransferService;
+import br.com.economize.service.StatementHygieneService;
 import br.com.economize.service.family.FamilyTransferService;
 import br.com.economize.service.TransactionAliasService;
 import br.com.economize.service.TransactionReviewService;
@@ -62,6 +63,9 @@ class TransactionControllerTest {
 
     @MockitoBean
     private FamilyTransferService familyTransferService;
+
+    @MockitoBean
+    private StatementHygieneService hygieneService;
 
     @MockitoBean
     private DuplicateTransactionService duplicateService;
@@ -336,5 +340,24 @@ class TransactionControllerTest {
                 .expectStatus().isBadRequest();
 
         verifyNoInteractions(familyTransferService);
+    }
+
+    @Test
+    @DisplayName("POST /tidy - devolve o que cada varredura mexeu")
+    void tidyReportsEveryPass() {
+        when(hygieneService.runFor(EMAIL))
+                .thenReturn(new StatementHygieneService.Outcome(197, 68, 20, 3, 12));
+
+        webTestClient.post()
+                .uri("/api/v1/transactions/tidy")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.internalMarked").isEqualTo(197)
+                .jsonPath("$.familyMarked").isEqualTo(68)
+                .jsonPath("$.duplicatesMarked").isEqualTo(20)
+                .jsonPath("$.seriesCreated").isEqualTo(3)
+                .jsonPath("$.seriesUpdated").isEqualTo(12);
     }
 }

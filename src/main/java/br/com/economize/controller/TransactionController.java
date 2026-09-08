@@ -11,6 +11,7 @@ import br.com.economize.dto.statement.UpdateTransactionAliasRequest;
 import br.com.economize.model.BankTransaction;
 import br.com.economize.service.DuplicateTransactionService;
 import br.com.economize.service.InternalTransferService;
+import br.com.economize.service.StatementHygieneService;
 import br.com.economize.service.family.FamilyTransferService;
 import br.com.economize.service.TransactionAliasService;
 import br.com.economize.service.TransactionReviewService;
@@ -37,6 +38,7 @@ public class TransactionController {
     private final TransactionAliasService aliasService;
     private final InternalTransferService internalTransferService;
     private final FamilyTransferService familyTransferService;
+    private final StatementHygieneService hygieneService;
     private final DuplicateTransactionService duplicateService;
 
     @Operation(summary = "Listar transações bancárias",
@@ -142,6 +144,20 @@ public class TransactionController {
     public Mono<InternalTransferService.Outcome> reconcileInternal(
             @AuthenticationPrincipal String email) {
         return Mono.fromCallable(() -> internalTransferService.reconcileByOwnName(email))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Operation(summary = "Passar a faxina inteira no extrato",
+            description = "Roda de uma vez as quatro varreduras que mantêm os números honestos, na ordem "
+                    + "em que elas dependem uma da outra: movimentação própria, transferência entre "
+                    + "pessoas da casa, duplicatas entre fontes e, por último, a detecção de recorrência "
+                    + "— que precisa enxergar as marcas anteriores, senão um Pix para si mesmo vira "
+                    + "despesa mensal E receita mensal na previsão de saldo. É a MESMA rotina que roda "
+                    + "sozinha depois de cada importação; este gatilho existe para reprocessar o "
+                    + "histórico quando uma regra melhora. Tudo é idempotente e reversível.")
+    @PostMapping("/tidy")
+    public Mono<StatementHygieneService.Outcome> tidy(@AuthenticationPrincipal String email) {
+        return Mono.fromCallable(() -> hygieneService.runFor(email))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
