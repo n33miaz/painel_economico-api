@@ -141,7 +141,9 @@ class RecurrenceDetectionServiceTest {
         assertThat(water.getAmountType()).isEqualTo(RecurringSeries.AmountType.VARIABLE);
         assertThat(water.getOccurrences()).isEqualTo(6);
         assertThat(water.getAnchorDay()).isEqualTo((short) 10);
-        assertThat(water.getExpectedAmount()).isEqualByComparingTo("89.2667");
+        // MEDIANA das seis, e não média: numa conta de consumo o mês atípico
+        // não pode reger a previsão dos outros
+        assertThat(water.getExpectedAmount()).isEqualByComparingTo("90.4500");
         assertThat(water.getCategoryId()).isEqualTo(utilitiesCategory);
 
         // 2) adquirente instável + virada do mês = assinatura de valor fixo
@@ -688,7 +690,9 @@ class RecurrenceDetectionServiceTest {
     @Test
     void fixedDetectionUsesTrueMedianOfAmountsNotChronologicalMiddle() {
         // meio CRONOLÓGICO = 1000 → banda de 50 engoliria a variação de 48 e
-        // classificaria FIXED; a mediana real (955) dá banda de 47.75 e expõe
+        // classificaria FIXED; a mediana real (955) dá banda de 47.75 e expõe.
+        // A mesma mediana é o valor previsto: 955, e não a média 969, porque um
+        // mês de R$ 1.000 no meio de dois de R$ 95x não muda o que o plano custa
         transactions.add(tx("Plano Saude Vitalis", "DEBIT", "-952.00", day(2025, 4, 20)));
         transactions.add(tx("Plano Saude Vitalis", "DEBIT", "-1000.00", day(2025, 5, 20)));
         transactions.add(tx("Plano Saude Vitalis", "DEBIT", "-955.00", day(2025, 6, 20)));
@@ -697,7 +701,7 @@ class RecurrenceDetectionServiceTest {
 
         RecurringSeries plan = series("vitalis", RecurringSeries.Flow.EXPENSE);
         assertThat(plan.getAmountType()).isEqualTo(RecurringSeries.AmountType.VARIABLE);
-        assertThat(plan.getExpectedAmount()).isEqualByComparingTo("969.0000");
+        assertThat(plan.getExpectedAmount()).isEqualByComparingTo("955.0000");
     }
 
     @Test
@@ -1016,6 +1020,74 @@ class RecurrenceDetectionServiceTest {
                     .id(UUID.randomUUID()).seriesId(series.getId())
                     .bankTransactionId(tx.getId()).matchedAt(OffsetDateTime.now()).build());
         }
+    }
+
+
+    @Test
+    void invoiceThatGrowsIsForecastByTheRecentMedianNotTheLifetimeAverage() {
+        // Os 12 pagamentos de fatura do dono, do extrato real (12/2025 a 09/2026).
+        // Ela subiu de R$ 568 para R$ 2.311 sem um degrau, e a média da janela
+        // longa previa R$ 1.480 — mil reais abaixo do que ele paga hoje
+        String[][] faturas = {
+                {"2025-12-07", "-568.74"}, {"2026-01-05", "-1412.62"},
+                {"2026-02-04", "-1391.70"}, {"2026-03-04", "-1669.00"},
+                {"2026-04-02", "-2013.90"}, {"2026-05-06", "-2114.42"},
+                {"2026-06-03", "-2625.72"}, {"2026-07-04", "-1291.42"},
+                {"2026-08-05", "-2383.17"}, {"2026-09-05", "-2311.49"},
+        };
+        for (String[] fatura : faturas) {
+            LocalDate dia = LocalDate.parse(fatura[0]);
+            transactions.add(tx("Pagamento efetuado: Pagamento fatura cartao Inter", "DEBIT",
+                    fatura[1], day(dia.getYear(), dia.getMonthValue(), dia.getDayOfMonth())));
+        }
+
+        service.detect(EMAIL);
+
+        RecurringSeries fatura = series("fatura", RecurringSeries.Flow.EXPENSE);
+        assertThat(fatura.getCadence()).isEqualTo(RecurringSeries.Cadence.MONTHLY);
+        // Mediana das seis últimas — com contagem par, o elemento de cima, que é
+        // o mesmo critério que a banda do FIXED já usava. Aqui ele cai em
+        // R$ 2.311,49, que é exatamente a fatura seguinte no extrato real.
+        // Para comparar: a média da janela longa previa R$ 1.480 e a das seis
+        // últimas R$ 2.123, as duas puxadas para baixo pelo mês em que ele pagou
+        // metade da fatura
+        assertThat(fatura.getExpectedAmount()).isEqualByComparingTo("2311.4900");
+    }
+
+    @Test
+    void monthlyDepositSurvivesAnExtraTopUpInTheMiddleOfTheMonth() {
+        // Vale-refeição do dono: cai todo mês, e uma recarga extra de R$ 24 em
+        // 07/07 partiu os intervalos em 12/22/30 dias. A mediana caiu em 22 e a
+        // segunda maior renda dele saiu IRREGULAR — fora da previsão
+        transactions.add(tx("Deposito transferido", "CREDIT", "770.00", day(2026, 6, 25)));
+        transactions.add(tx("Deposito transferido", "CREDIT", "24.00", day(2026, 7, 7)));
+        transactions.add(tx("Deposito transferido", "CREDIT", "735.00", day(2026, 7, 29)));
+        transactions.add(tx("Deposito transferido", "CREDIT", "735.00", day(2026, 8, 28)));
+
+        service.detect(EMAIL);
+
+        RecurringSeries vale = series("transferido", RecurringSeries.Flow.INCOME);
+        // Três meses de calendário seguidos: o que acontece em todo mês é mensal,
+        // independentemente de quantos dias separam duas linhas
+        assertThat(vale.getCadence()).isEqualTo(RecurringSeries.Cadence.MONTHLY);
+        // E a mediana ignora a recarga de R$ 24, que a média (R$ 566) engolia
+        assertThat(vale.getExpectedAmount()).isEqualByComparingTo("735.0000");
+    }
+
+    @Test
+    void threeVisitsAMonthDoNotBecomeAMonthlyBill() {
+        // O teto de uma ocorrência e meia por mês existe para isto: a padaria de
+        // toda semana aparece em meses seguidos e não é conta mensal
+        for (int mes = 6; mes <= 8; mes++) {
+            transactions.add(tx("Padaria do Ze", "DEBIT", "-12.00", day(2026, mes, 3)));
+            transactions.add(tx("Padaria do Ze", "DEBIT", "-15.00", day(2026, mes, 12)));
+            transactions.add(tx("Padaria do Ze", "DEBIT", "-9.00", day(2026, mes, 25)));
+        }
+
+        service.detect(EMAIL);
+
+        RecurringSeries padaria = series("padaria", RecurringSeries.Flow.EXPENSE);
+        assertThat(padaria.getCadence()).isNotEqualTo(RecurringSeries.Cadence.MONTHLY);
     }
 
     private RecurringSeries series(String merchantKey, RecurringSeries.Flow flow) {
