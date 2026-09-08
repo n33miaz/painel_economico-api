@@ -28,7 +28,7 @@ jobs:
     name: Segredos no histórico
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Histórico inteiro: segredo que vazou há vinte commits continua
           # vazado, mesmo que o arquivo já tenha sido removido depois
@@ -45,7 +45,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/dependency-review-action@v4
         with:
           # Alta e crítica barram o PR; média e baixa entram como comentário
@@ -59,7 +59,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -97,7 +97,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v3
         with:
           languages: actions
