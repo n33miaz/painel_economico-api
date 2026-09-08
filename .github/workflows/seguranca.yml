@@ -84,3 +84,24 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:java-kotlin"
+
+  acoes:
+    name: CodeQL (Actions)
+    # A própria esteira é código, e roda com um token. O padrão clássico de
+    # injeção aqui é interpolar dado do evento (título de PR, nome de branch)
+    # dentro de um `run:` — quem abre o PR escolhe o texto, e o texto vira
+    # comando. Este scanner existe para isso não passar despercebido no dia em
+    # que alguém acrescentar um passo com pressa.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: actions
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:actions"
