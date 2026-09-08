@@ -1,10 +1,23 @@
 name: CI
 
+# O fluxo é develop → homolog → main. A esteira roda nos três, e nos PRs entre
+# eles: sem isso a proteção de branch não tem em que se apoiar, porque ela exige
+# um check que tenha CORRIDO naquele commit.
 on:
   push:
-    branches: ["main"]
+    branches: ["develop", "homolog", "main"]
   pull_request:
-    branches: ["main"]
+    branches: ["develop", "homolog", "main"]
+
+# Só leitura por padrão. Cada job que precisar de mais declara o seu.
+permissions:
+  contents: read
+
+# Push em cima de push cancela o anterior: o que importa é o topo do branch, e
+# o plano gratuito tem minuto contado
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -30,3 +43,92 @@ jobs:
           DB_PASSWORD: sa
           JWT_SECRET: ci_secret_ci_secret_ci_secret_ci_secret_
         run: ./mvnw -B verify
+
+  migrations:
+    name: Migrations contra Postgres
+    runs-on: ubuntu-latest
+    # Este job existe porque migration só é verificada EXECUTANDO. A suíte roda
+    # com `spring.flyway.enabled=false` em H2, então nada nela toca num arquivo
+    # de migration — e o primeiro lugar onde eles rodavam de verdade era a conta
+    # do dono. Aqui o schema nasce do zero a cada push: o Flyway aplica V1 até a
+    # última e o Hibernate valida o mapeamento contra o que saiu, que é a mesma
+    # dupla de erros que derruba um deploy (SQL inválido e coluna que não bate).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: economize
+          POSTGRES_PASSWORD: economize
+          POSTGRES_DB: economize_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U economize"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+          cache: maven
+
+      - name: Empacotar
+        run: ./mvnw -B package -DskipTests
+
+      - name: Subir com Flyway ligado e ddl-auto=validate
+        env:
+          BRAPI_TOKEN: dummy
+          GEMINI_API_KEY: dummy
+          DB_URL: jdbc:postgresql://localhost:5432/economize_ci
+          DB_USER: economize
+          DB_PASSWORD: economize
+          JWT_SECRET: ci_secret_ci_secret_ci_secret_ci_secret_
+          SPRING_FLYWAY_ENABLED: "true"
+          SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+          SERVER_PORT: "8080"
+        run: |
+          java -jar target/*.jar > boot.log 2>&1 &
+          echo $! > app.pid
+          # 120 s é folga larga: local sobe em ~25 s, e o runner é mais lento
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/actuator/health > /dev/null; then
+              echo "subiu na tentativa $i"
+              exit 0
+            fi
+            if ! kill -0 "$(cat app.pid)" 2>/dev/null; then
+              echo "::error::a aplicação morreu antes de responder"
+              tail -80 boot.log
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::a aplicação não respondeu em 120s"
+          tail -80 boot.log
+          exit 1
+
+      - name: Conferir o schema anunciado
+        # A versão do schema volta no /app/version. Ela não pode ficar para trás
+        # do maior arquivo de migration: se ficar, alguma migration não rodou e o
+        # boot passou por acaso
+        run: |
+          esperado=$(ls src/main/resources/db/migration/V*__*.sql \
+            | sed -E 's/.*\/V([0-9]+)__.*/\1/' | sort -n | tail -1)
+          anunciado=$(curl -sf http://localhost:8080/api/v1/app/version \
+            | sed -E 's/.*"schemaVersion":"V?([0-9]+)".*/\1/')
+          echo "arquivos: V$esperado | anunciado: V$anunciado"
+          if [ "$esperado" != "$anunciado" ]; then
+            echo "::error::schema anunciado (V$anunciado) não é a última migration (V$esperado)"
+            exit 1
+          fi
+
+      - name: Log da aplicação
+        if: always()
+        run: tail -40 boot.log || true
+
+      - name: Encerrar
+        if: always()
+        run: kill "$(cat app.pid)" 2>/dev/null || true
