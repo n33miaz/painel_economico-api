@@ -1,6 +1,14 @@
 # Blueprint do Render — a infra da API descrita no próprio repo.
-# Ao conectar este repositório em "New > Blueprint", o Render cria o serviço com
-# tudo daqui e passa a redeployar a cada push na main.
+# Ao conectar este repositório em "New > Blueprint", o Render cria os serviços
+# com tudo daqui e passa a redeployar a cada push.
+#
+# SÃO DOIS AMBIENTES, e a diferença entre eles é o branch:
+#   economize-api          ← main      — o que o dono usa
+#   economize-api-homolog  ← homolog   — onde a migration estreia
+#
+# O fluxo é develop → homolog → main. `main` é protegido no GitHub e só recebe
+# merge com a esteira verde, então o autoDeploy dela já nasce filtrado — não há
+# como um commit que quebrou o teste chegar em produção pelo caminho normal.
 #
 # Os segredos NÃO ficam neste arquivo: `sync: false` faz o Render pedir o valor
 # na criação e guardá-lo no painel. O JWT_SECRET é gerado lá — assim ele nasce
@@ -15,6 +23,9 @@ services:
     region: virginia
     dockerfilePath: ./Dockerfile
     healthCheckPath: /actuator/health
+    # Explicito de propósito: com dois serviços no mesmo arquivo, o branch
+    # deixa de ser detalhe e passa a ser a única coisa que os separa
+    branch: main
     autoDeploy: true
     envVars:
       # Postgres do Supabase
@@ -115,3 +126,97 @@ services:
       #                        estruturas e threads de GC do que devolve aqui
       - key: JAVA_OPTS
         value: -Xmx256m -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC
+
+  # --------------------------------------------------------------------------
+  # HOMOLOGAÇÃO — o ambiente onde a migration estreia
+  #
+  # A diferença que ele faz: até aqui, toda migration nova estreava contra a
+  # conta que o dono usa de verdade. Agora ela roda primeiro num banco que pode
+  # quebrar sem consequência, com dados de teste, e só depois vai para `main`.
+  #
+  # O banco é criado pelo próprio blueprint (ver `databases` no fim do arquivo),
+  # então não há URL para colar à mão. O Render entrega os dados campo a campo,
+  # e o `application.properties` monta a URL JDBC a partir deles quando DB_URL
+  # não vem preenchida — produção continua usando DB_URL, como sempre.
+  # --------------------------------------------------------------------------
+  - type: web
+    name: economize-api-homolog
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    branch: homolog
+    # Aqui o autoDeploy é para valer: o objetivo do ambiente é justamente ver o
+    # que acabou de ser mergeado, o quanto antes
+    autoDeploy: true
+    envVars:
+      - key: DB_HOST
+        fromDatabase:
+          name: economize-homolog-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: economize-homolog-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: economize-homolog-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: economize-homolog-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: economize-homolog-db
+          property: password
+      # Segredo PRÓPRIO, e não o de produção: token emitido em homologação não
+      # pode valer na conta do dono. É o mesmo motivo de o banco ser outro
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://economize-web-homolog.onrender.com,http://localhost:8081,http://localhost:19006
+      # As chaves de terceiros ficam VAZIAS de propósito. A API sobe sem elas —
+      # o mercado cai para as fontes gratuitas e a IA fica desligada —, e gastar
+      # cota de API paga com tráfego de homologação seria pagar duas vezes pela
+      # mesma coisa. Preencha no painel se precisar testar exatamente esse ponto.
+      - key: GEMINI_API_KEY
+        value: ""
+      - key: BRAPI_TOKEN
+        value: ""
+      # Cifra de segredo do usuário desligada aqui: sem ela a opção de chave
+      # própria some do app e todo mundo segue na chave do servidor, que é um
+      # cenário válido e o que se quer em homologação
+      - key: SECRET_ENCRYPTION_KEY
+        value: ""
+      - key: SECRET_ENCRYPTION_KEY_ID
+        value: k1
+      - key: SECRET_ENCRYPTION_PREVIOUS_KEYS
+        value: ""
+      # Conector bancário DESLIGADO: homologação não pode tocar em conta real de
+      # ninguém, e o Pluggy só tem os itens do dono
+      - key: PLUGGY_ENABLED
+        value: "false"
+      # Mesmo teto de memória de produção: um ambiente que não reproduz o limite
+      # não serve para descobrir que a memória estourou
+      - key: JAVA_OPTS
+        value: -Xmx256m -XX:MaxMetaspaceSize=140m -XX:MaxDirectMemorySize=48m -Xss512k -XX:+UseSerialGC
+
+# ----------------------------------------------------------------------------
+# O banco de homologação. Fica no Render, e não no Supabase, por dois motivos:
+# ele nasce junto com o serviço (nada para criar à mão) e não divide instância
+# nenhuma com o banco que guarda o extrato de verdade do dono.
+#
+# ATENÇÃO ao plano gratuito: o Postgres free do Render EXPIRA (hoje, 30 dias) e
+# some. Isso é aceitável aqui — homologação não guarda nada que precise durar —,
+# mas quando ele expirar o serviço vai parar de subir até o banco ser recriado.
+# Recriar é apagar a entrada no painel e sincronizar o blueprint de novo; o
+# Flyway remonta o schema inteiro no primeiro boot.
+# ----------------------------------------------------------------------------
+databases:
+  - name: economize-homolog-db
+    plan: free
+    region: virginia
+    databaseName: economize_homolog
+    user: economize
